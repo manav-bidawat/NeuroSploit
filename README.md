@@ -605,6 +605,12 @@ python3 -m core.mcp_server        # Starts stdio MCP server (12 tools)
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=CyberSecurityUP/NeuroSploit&type=date&legend=top-left)](https://www.star-history.com/#CyberSecurityUP/NeuroSploit&type=date&legend=top-left)
+
+---
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
