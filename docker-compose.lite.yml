@@ -1,0 +1,45 @@
+# NeuroSploit v3 - LITE Docker Compose
+# Fast builds without external security tools
+# Usage: docker compose -f docker-compose.lite.yml up --build
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend.lite
+    container_name: neurosploit-backend
+    env_file:
+      - .env
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DATABASE_URL=sqlite+aiosqlite:///./data/neurosploit.db
+    volumes:
+      - neurosploit-data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: neurosploit-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  neurosploit-data:
+
+networks:
+  default:
+    name: neurosploit-network

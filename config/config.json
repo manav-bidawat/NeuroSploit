@@ -1,0 +1,114 @@
+{
+    "llm": {
+        "default_profile": "gemini_pro_default",
+        "profiles": {
+            "gemini_pro_default": {
+                "provider": "gemini",
+                "model": "gemini-pro",
+                "api_key": "${GEMINI_API_KEY}",
+                "temperature": 0.7,
+                "max_tokens": 4096,
+                "input_token_limit": 30720,
+                "output_token_limit": 2048,
+                "cache_enabled": true,
+                "search_context_level": "medium",
+                "pdf_support_enabled": true,
+                "guardrails_enabled": true,
+                "hallucination_mitigation_strategy": "consistency_check"
+            }
+        }
+    },
+    "agent_roles": {
+        "pentest_generalist": {
+            "enabled": true,
+            "tools_allowed": [
+                "nmap",
+                "metasploit",
+                "burpsuite",
+                "sqlmap",
+                "hydra"
+            ],
+            "description": "Performs comprehensive penetration tests across various domains.",
+            "methodology": ["OWASP-WSTG", "PTES", "OWASP-Top10-2021"],
+            "default_prompt": "auto_pentest",
+            "vuln_coverage": 100,
+            "ai_prompts": true
+        },
+        "bug_bounty_hunter": {
+            "enabled": true,
+            "tools_allowed": [
+                "subfinder",
+                "nuclei",
+                "burpsuite",
+                "sqlmap"
+            ],
+            "description": "Focuses on web application vulnerabilities with 100 vuln types.",
+            "methodology": ["OWASP-WSTG", "OWASP-Top10-2021"],
+            "default_prompt": "auto_pentest",
+            "vuln_coverage": 100,
+            "ai_prompts": true
+        }
+    },
+    "methodologies": {
+        "owasp_top10": true,
+        "cwe_top25": true,
+        "network_pentest": true,
+        "ad_pentest": true,
+        "web_security": true
+    },
+    "tools": {
+        "nmap": "/usr/bin/nmap",
+        "metasploit": "/usr/bin/msfconsole",
+        "burpsuite": "/usr/bin/burpsuite",
+        "sqlmap": "/usr/bin/sqlmap",
+        "hydra": "/usr/bin/hydra"
+    },
+    "mcp_servers": {
+        "neurosploit_tools": {
+            "transport": "stdio",
+            "command": "python3",
+            "args": ["-m", "core.mcp_server"],
+            "description": "NeuroSploit pentest tools: screenshots, payload delivery, DNS, port scan, tech detect, subdomain enum, findings, AI prompts, Nuclei scanner, Naabu port scanner, sandbox execution"
+        }
+    },
+    "sandbox": {
+        "enabled": false,
+        "mode": "per_scan",
+        "image": "neurosploit-sandbox:latest",
+        "container_name": "neurosploit-sandbox",
+        "auto_start": false,
+        "kali": {
+            "enabled": true,
+            "image": "neurosploit-kali:latest",
+            "max_concurrent": 5,
+            "container_ttl_minutes": 60,
+            "auto_cleanup_orphans": true
+        },
+        "resources": {
+            "memory_limit": "2g",
+            "cpu_limit": 2.0
+        },
+        "tools": [
+            "nuclei", "naabu", "nmap", "httpx", "subfinder", "katana",
+            "dnsx", "ffuf", "gobuster", "dalfox", "nikto", "sqlmap",
+            "whatweb", "curl", "dig", "whois", "masscan", "dirsearch",
+            "wfuzz", "arjun", "wafw00f", "waybackurls"
+        ],
+        "nuclei": {
+            "rate_limit": 150,
+            "timeout": 600,
+            "severity_filter": "critical,high,medium",
+            "auto_update_templates": true
+        },
+        "naabu": {
+            "rate": 1000,
+            "top_ports": 1000,
+            "timeout": 300
+        }
+    },
+    "output": {
+        "format": "json",
+        "verbose": true,
+        "save_artifacts": true
+    }
+}

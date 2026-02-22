@@ -1,0 +1,19 @@
+{
+  "documents": [
+    {
+      "id": "1c4cf70f-d4a",
+      "filename": "pentest.md",
+      "title": "Kali Linux Penetration Testing Fundamentals and Essential Tools",
+      "source_type": "md",
+      "uploaded_at": "2026-02-16T14:50:31.618020",
+      "processed": true,
+      "file_size_bytes": 20702,
+      "summary": "This document provides an introduction to Kali Linux as a penetration testing platform and covers fundamental Linux concepts. It discusses the differences between vulnerability assessments and penetration tests, emphasizes legal considerations including written authorization requirements, and introduces netcat as an essential networking tool for security testing.",
+      "vuln_types": [],
+      "knowledge_entries": []
+    }
+  ],
+  "vuln_type_index": {},
+  "version": "1.0",
+  "updated_at": "2026-02-16T14:50:31.618046"
+}

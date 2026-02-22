@@ -1,0 +1,814 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-02-18T15:03:21.883531",
+  "tasks": [
+    {
+      "id": "recon_full",
+      "name": "Full Reconnaissance",
+      "description": "Complete reconnaissance: subdomains, ports, technologies, endpoints",
+      "category": "recon",
+      "prompt": "Perform comprehensive reconnaissance on the target:\n\n1. **Subdomain Enumeration**: Find all subdomains\n2. **Port Scanning**: Identify open ports and services\n3. **Technology Detection**: Fingerprint web technologies, frameworks, servers\n4. **Endpoint Discovery**: Crawl and find all accessible endpoints\n5. **Parameter Discovery**: Find URL parameters and form inputs\n6. **JavaScript Analysis**: Extract endpoints from JS files\n7. **API Discovery**: Find API endpoints and documentation\n\nConsolidate all findings into a structured report.",
+      "system_prompt": "You are a reconnaissance expert. Gather information systematically and thoroughly.",
+      "tools_required": [
+        "subfinder",
+        "httpx",
+        "nmap",
+        "katana",
+        "gau"
+      ],
+      "estimated_tokens": 2000,
+      "created_at": "2026-02-08T18:02:15.119727",
+      "updated_at": "2026-02-08T18:02:15.119727",
+      "author": "user",
+      "tags": [
+        "recon",
+        "discovery",
+        "enumeration"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "recon_passive",
+      "name": "Passive Reconnaissance",
+      "description": "Non-intrusive reconnaissance using public data only",
+      "category": "recon",
+      "prompt": "Perform PASSIVE reconnaissance only (no direct interaction with target):\n\n1. **OSINT**: Search for public information\n2. **DNS Records**: Enumerate DNS records\n3. **Historical Data**: Check Wayback Machine, archive.org\n4. **Certificate Transparency**: Find subdomains from CT logs\n5. **Google Dorking**: Search for exposed files/information\n6. **Social Media**: Find related accounts and information\n\nDo NOT send any requests directly to the target.",
+      "system_prompt": "You are an OSINT expert. Only use passive techniques.",
+      "tools_required": [
+        "subfinder",
+        "gau",
+        "waybackurls"
+      ],
+      "estimated_tokens": 1500,
+      "created_at": "2026-02-08T18:02:15.119744",
+      "updated_at": "2026-02-08T18:02:15.119744",
+      "author": "user",
+      "tags": [
+        "recon",
+        "passive",
+        "osint"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_owasp_top10",
+      "name": "OWASP Top 10 Assessment",
+      "description": "Test for OWASP Top 10 vulnerabilities",
+      "category": "vulnerability",
+      "prompt": "Test the target for OWASP Top 10 vulnerabilities:\n\n1. **A01 - Broken Access Control**: Test for IDOR, privilege escalation\n2. **A02 - Cryptographic Failures**: Check for weak crypto, exposed secrets\n3. **A03 - Injection**: Test SQL, NoSQL, OS, LDAP injection\n4. **A04 - Insecure Design**: Analyze business logic flaws\n5. **A05 - Security Misconfiguration**: Check headers, default configs\n6. **A06 - Vulnerable Components**: Identify outdated libraries\n7. **A07 - Authentication Failures**: Test auth bypass, weak passwords\n8. **A08 - Data Integrity Failures**: Check for insecure deserialization\n9. **A09 - Security Logging Failures**: Test for logging gaps\n10. **A10 - SSRF**: Test for server-side request forgery\n\nFor each finding:\n- Provide CVSS score and calculation\n- Detailed description\n- Proof of Concept\n- Remediation recommendation",
+      "system_prompt": "You are a web security expert specializing in OWASP vulnerabilities.",
+      "tools_required": [
+        "nuclei",
+        "sqlmap",
+        "xsstrike"
+      ],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-08T18:02:15.119754",
+      "updated_at": "2026-02-08T18:02:15.119754",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "owasp",
+        "web"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_api_security",
+      "name": "API Security Testing",
+      "description": "Test API endpoints for security issues",
+      "category": "vulnerability",
+      "prompt": "Test the API for security vulnerabilities:\n\n1. **Authentication**: Test JWT, OAuth, API keys\n2. **Authorization**: Check for BOLA, BFLA, broken object level auth\n3. **Rate Limiting**: Test for missing rate limits\n4. **Input Validation**: Injection attacks on API params\n5. **Data Exposure**: Check for excessive data exposure\n6. **Mass Assignment**: Test for mass assignment vulnerabilities\n7. **Security Misconfiguration**: CORS, headers, error handling\n8. **Injection**: GraphQL, SQL, NoSQL injection\n\nFor each finding provide CVSS, PoC, and remediation.",
+      "system_prompt": "You are an API security expert.",
+      "tools_required": [
+        "nuclei",
+        "ffuf"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-08T18:02:15.119761",
+      "updated_at": "2026-02-08T18:02:15.119761",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "api",
+        "rest",
+        "graphql"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_injection",
+      "name": "Injection Testing",
+      "description": "Comprehensive injection vulnerability testing",
+      "category": "vulnerability",
+      "prompt": "Test all input points for injection vulnerabilities:\n\n1. **SQL Injection**: Error-based, union, blind, time-based\n2. **NoSQL Injection**: MongoDB, CouchDB injections\n3. **Command Injection**: OS command execution\n4. **LDAP Injection**: Directory service injection\n5. **XPath Injection**: XML path injection\n6. **Template Injection (SSTI)**: Jinja2, Twig, Freemarker\n7. **Header Injection**: Host header, CRLF injection\n8. **Email Header Injection**: SMTP injection\n\nTest ALL parameters: URL, POST body, headers, cookies.\nProvide working PoC for each finding.",
+      "system_prompt": "You are an injection attack specialist. Test thoroughly but safely.",
+      "tools_required": [
+        "sqlmap",
+        "commix"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-08T18:02:15.119768",
+      "updated_at": "2026-02-08T18:02:15.119768",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "injection",
+        "sqli",
+        "rce"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_bug_bounty",
+      "name": "Bug Bounty Hunter Mode",
+      "description": "Full automated bug bounty workflow: recon -> analyze -> test -> report",
+      "category": "full_auto",
+      "prompt": "Execute complete bug bounty workflow:\n\n## PHASE 1: RECONNAISSANCE\n- Enumerate all subdomains and assets\n- Probe for live hosts\n- Discover all endpoints\n- Identify technologies and frameworks\n\n## PHASE 2: ANALYSIS\n- Analyze attack surface\n- Identify high-value targets\n- Map authentication flows\n- Document API endpoints\n\n## PHASE 3: VULNERABILITY TESTING\n- Test for critical vulnerabilities first (RCE, SQLi, Auth Bypass)\n- Test for high severity (XSS, SSRF, IDOR)\n- Test for medium/low (Info disclosure, misconfigs)\n\n## PHASE 4: EXPLOITATION\n- Develop PoC for confirmed vulnerabilities\n- Calculate CVSS scores\n- Document impact and risk\n\n## PHASE 5: REPORTING\n- Generate professional report\n- Include all findings with evidence\n- Provide remediation steps\n\nFocus on impact. Prioritize critical findings.",
+      "system_prompt": "You are an elite bug bounty hunter. Your goal is to find real, impactful vulnerabilities.\nBe thorough but efficient. Focus on high-severity issues first.\nEvery finding must have: Evidence, CVSS, Impact, PoC, Remediation.",
+      "tools_required": [
+        "subfinder",
+        "httpx",
+        "nuclei",
+        "katana",
+        "sqlmap"
+      ],
+      "estimated_tokens": 10000,
+      "created_at": "2026-02-08T18:02:15.119779",
+      "updated_at": "2026-02-08T18:02:15.119779",
+      "author": "user",
+      "tags": [
+        "full",
+        "bug_bounty",
+        "automated"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_pentest",
+      "name": "Full Penetration Test",
+      "description": "Complete penetration test workflow",
+      "category": "full_auto",
+      "prompt": "Execute comprehensive penetration test:\n\n## PHASE 1: INFORMATION GATHERING\n- Passive reconnaissance\n- Active reconnaissance\n- Network mapping\n- Service enumeration\n\n## PHASE 2: VULNERABILITY ANALYSIS\n- Automated scanning\n- Manual testing\n- Business logic analysis\n- Configuration review\n\n## PHASE 3: EXPLOITATION\n- Exploit confirmed vulnerabilities\n- Post-exploitation (if authorized)\n- Privilege escalation attempts\n- Lateral movement (if authorized)\n\n## PHASE 4: DOCUMENTATION\n- Document all findings\n- Calculate CVSS 3.1 scores\n- Create proof of concepts\n- Write remediation recommendations\n\n## PHASE 5: REPORTING\n- Executive summary\n- Technical findings\n- Risk assessment\n- Remediation roadmap\n\nThis is a full penetration test. Be thorough and professional.",
+      "system_prompt": "You are a professional penetration tester conducting an authorized security assessment.\nDocument everything. Be thorough. Follow methodology.\nAll findings must include: Title, CVSS, Description, Evidence, Impact, Remediation.",
+      "tools_required": [
+        "nmap",
+        "nuclei",
+        "sqlmap",
+        "nikto",
+        "ffuf"
+      ],
+      "estimated_tokens": 15000,
+      "created_at": "2026-02-08T18:02:15.119785",
+      "updated_at": "2026-02-08T18:02:15.119785",
+      "author": "user",
+      "tags": [
+        "full",
+        "pentest",
+        "professional"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "custom_prompt",
+      "name": "Custom Prompt (Full AI Mode)",
+      "description": "Execute any custom prompt - AI decides what tools to use",
+      "category": "custom",
+      "prompt": "[USER_PROMPT_HERE]\n\nAnalyze this request and:\n1. Determine what information/tools are needed\n2. Plan the approach\n3. Execute the necessary tests\n4. Analyze results\n5. Report findings\n\nYou have full autonomy to use any tools and techniques needed.",
+      "system_prompt": "You are an autonomous AI security agent.\nAnalyze the user's request and execute it completely.\nYou can use any tools available. Be creative and thorough.\nIf the task requires testing, test. If it requires analysis, analyze.\nAlways provide detailed results with evidence.",
+      "tools_required": [],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-08T18:02:15.119794",
+      "updated_at": "2026-02-08T18:02:15.119794",
+      "author": "user",
+      "tags": [
+        "custom",
+        "flexible",
+        "ai"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "analyze_only",
+      "name": "Analysis Only (No Testing)",
+      "description": "AI analysis without active testing - uses provided data",
+      "category": "custom",
+      "prompt": "Analyze the provided data/context WITHOUT performing active tests:\n\n1. Review all provided information\n2. Identify potential security issues\n3. Assess risk levels\n4. Provide recommendations\n\nDo NOT send any requests to the target.\nBase your analysis only on provided data.",
+      "system_prompt": "You are a security analyst. Analyze provided data without active testing.",
+      "tools_required": [],
+      "estimated_tokens": 2000,
+      "created_at": "2026-02-08T18:02:15.119799",
+      "updated_at": "2026-02-08T18:02:15.119799",
+      "author": "user",
+      "tags": [
+        "analysis",
+        "passive",
+        "review"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "report_executive",
+      "name": "Executive Summary Report",
+      "description": "Generate executive-level security report",
+      "category": "reporting",
+      "prompt": "Generate an executive summary report from the findings:\n\n1. **Executive Summary**: High-level overview for management\n2. **Risk Assessment**: Overall security posture rating\n3. **Key Findings**: Top critical/high findings only\n4. **Business Impact**: How vulnerabilities affect the business\n5. **Recommendations**: Prioritized remediation roadmap\n6. **Metrics**: Charts and statistics\n\nKeep it concise and business-focused. Avoid technical jargon.",
+      "system_prompt": "You are a security consultant writing for executives.",
+      "tools_required": [],
+      "estimated_tokens": 2000,
+      "created_at": "2026-02-08T18:02:15.119804",
+      "updated_at": "2026-02-08T18:02:15.119804",
+      "author": "user",
+      "tags": [
+        "reporting",
+        "executive",
+        "summary"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "report_technical",
+      "name": "Technical Security Report",
+      "description": "Generate detailed technical security report",
+      "category": "reporting",
+      "prompt": "Generate a detailed technical security report:\n\nFor each vulnerability include:\n1. **Title**: Clear, descriptive title\n2. **Severity**: Critical/High/Medium/Low/Info\n3. **CVSS Score**: Calculate CVSS 3.1 score with vector\n4. **CWE ID**: Relevant CWE classification\n5. **Description**: Detailed technical explanation\n6. **Affected Component**: Endpoint, parameter, function\n7. **Proof of Concept**: Working PoC code/steps\n8. **Evidence**: Screenshots, requests, responses\n9. **Impact**: What an attacker could achieve\n10. **Remediation**: Specific fix recommendations\n11. **References**: OWASP, CWE, vendor docs\n\nBe thorough and technical.",
+      "system_prompt": "You are a senior security engineer writing a technical report.",
+      "tools_required": [],
+      "estimated_tokens": 3000,
+      "created_at": "2026-02-08T18:02:15.119809",
+      "updated_at": "2026-02-08T18:02:15.119809",
+      "author": "user",
+      "tags": [
+        "reporting",
+        "technical",
+        "detailed"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_xss_deep",
+      "name": "Deep XSS Assessment",
+      "description": "Comprehensive XSS testing: reflected, stored, DOM, blind, mutation, filter bypass",
+      "category": "vulnerability",
+      "prompt": "Perform deep cross-site scripting assessment:\n\n## PHASE 1: REFLECTION MAPPING\n- Crawl all pages and identify every input reflection point\n- Map reflection contexts: HTML body, attribute, JavaScript, URL, CSS\n- Test encoding behavior for <, >, \", ', `, /, \\\n\n## PHASE 2: REFLECTED XSS\n- Test each reflection point with context-appropriate payloads\n- Bypass WAF/filters using encoding, case variation, event handlers\n- Test alternative tags: <svg>, <img>, <details>, <math>, <video>\n- Test attribute injection: onfocus, onmouseover, autofocus\n- Test JavaScript context: '-alert(1)-', \\'-alert(1)//, template literals\n\n## PHASE 3: STORED XSS\n- Identify all storage points (comments, profiles, messages, file names)\n- Submit XSS payloads and find where they render\n- Verify cross-user rendering (payload visible to other users)\n- Test rich text editors for HTML injection\n\n## PHASE 4: DOM XSS\n- Analyze all JavaScript for source\u2192sink flows\n- Test location.hash, location.search, document.referrer sources\n- Test innerHTML, document.write, eval, jQuery sinks\n- Test postMessage handlers for origin validation\n\n## PHASE 5: ADVANCED TECHNIQUES\n- Blind XSS via admin/backend rendering (callback payloads)\n- Mutation XSS via browser parsing quirks (mXSS)\n- Polyglot payloads that work in multiple contexts\n- CSP bypass techniques (unsafe-eval, unsafe-inline, nonce reuse, base-uri)\n- Script gadget exploitation (known library bypasses)\n\n## PHASE 6: BROWSER VALIDATION\n- Validate all findings with Playwright/headless browser\n- Confirm script execution (alert, cookie access, DOM modification)\n- Document exact context and working payload\n\nFor each finding: CVSS, PoC, context analysis, browser verification.",
+      "system_prompt": "You are a XSS specialist. Test every context, bypass every filter. Prove execution in browser.",
+      "tools_required": [
+        "katana",
+        "httpx",
+        "nuclei"
+      ],
+      "estimated_tokens": 6000,
+      "created_at": "2026-02-17T13:14:21.697384",
+      "updated_at": "2026-02-17T13:14:21.697384",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "xss",
+        "dom",
+        "stored",
+        "reflected",
+        "bypass"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_sqli_deep",
+      "name": "Deep SQL Injection Assessment",
+      "description": "Advanced SQLi: error, union, blind, time, ORM, second-order, WAF bypass",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive SQL injection assessment:\n\n## PHASE 1: INJECTION POINT DISCOVERY\n- Test ALL parameters: URL, POST body, headers, cookies\n- Test hidden parameters, JSON fields, XML attributes\n- Test file upload filenames and metadata\n- Use canary values to identify SQL context\n\n## PHASE 2: ERROR-BASED SQLi\n- Trigger database errors with syntax breaking: ', \", `, ), ;\n- Identify database type from error messages (MySQL, PostgreSQL, MSSQL, Oracle, SQLite)\n- Extract data via EXTRACTVALUE, UPDATEXML, CONVERT (DB-specific)\n- Test stacked queries where supported\n\n## PHASE 3: UNION-BASED SQLi\n- Determine column count (ORDER BY, UNION SELECT NULL)\n- Find output columns (visible vs invisible)\n- Extract schema: database names, table names, column names\n- Extract sensitive data: users, passwords, tokens\n\n## PHASE 4: BLIND SQLi (BOOLEAN & TIME)\n- Boolean: AND 1=1 vs AND 1=2 response difference\n- Time: SLEEP(), WAITFOR DELAY, pg_sleep()\n- Optimize extraction with binary search\n- Test conditional errors for error-based blind\n\n## PHASE 5: ADVANCED TECHNIQUES\n- Second-order injection (stored SQL executed later)\n- Out-of-band: DNS exfiltration, HTTP callbacks\n- WAF bypass: comments (/*!*/), encoding, case mixing, null bytes\n- ORM injection: order-by, HQL/JPQL specific syntax\n- NoSQL variant: test JSON operators if MongoDB suspected\n\n## PHASE 6: POST-EXPLOITATION\n- Read sensitive files (LOAD_FILE, UTL_FILE)\n- Write web shell (INTO OUTFILE, xp_cmdshell)\n- Enumerate database users and privileges\n- Test for database links to other systems\n\nFor each finding: DB type, injection type, extracted data, CVSS, PoC, remediation.",
+      "system_prompt": "You are a SQL injection expert. Test every parameter, every technique, every database. Extract real data as proof.",
+      "tools_required": [
+        "sqlmap",
+        "nuclei",
+        "httpx"
+      ],
+      "estimated_tokens": 6000,
+      "created_at": "2026-02-17T13:14:21.697401",
+      "updated_at": "2026-02-17T13:14:21.697401",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "sqli",
+        "injection",
+        "database",
+        "blind"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_auth_testing",
+      "name": "Authentication Security Testing",
+      "description": "Test all auth mechanisms: login, registration, password reset, session, JWT, OAuth, 2FA",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive authentication security testing:\n\n## PHASE 1: LOGIN SECURITY\n- Test for default credentials on all login panels\n- Test password brute force resistance (lockout, rate limiting)\n- Test credential stuffing protection\n- Check for username enumeration (response timing, messages)\n- Test login bypass via SQL injection, type juggling\n\n## PHASE 2: SESSION MANAGEMENT\n- Analyze session token entropy and randomness\n- Test session fixation (does session regenerate on login?)\n- Test session hijacking (predictable tokens, insecure transport)\n- Check session timeout and expiration\n- Test concurrent session limits\n- Check session invalidation on logout and password change\n\n## PHASE 3: PASSWORD RESET\n- Test for host header poisoning in reset links\n- Test token predictability/brute-forceability\n- Check token expiration and single-use enforcement\n- Test for user enumeration via reset flow\n- Check if old password required for change\n\n## PHASE 4: JWT ANALYSIS\n- Decode and analyze JWT structure\n- Test none algorithm attack\n- Test algorithm confusion (RS256 to HS256)\n- Test weak signing secrets (hashcat/jwt_tool)\n- Test claim manipulation (role, sub, exp)\n- Check for JWK/JKU injection\n\n## PHASE 5: OAUTH TESTING\n- Map OAuth flow and identify grant type\n- Test redirect_uri manipulation\n- Test state parameter absence/reuse (CSRF)\n- Test scope escalation\n- Check for token leakage in URL/referer\n\n## PHASE 6: 2FA TESTING\n- Test 2FA bypass by direct navigation\n- Test code brute force (rate limits?)\n- Test code reuse / non-expiration\n- Test backup codes predictability\n- Test 2FA enrollment bypass\n\nFor each finding: CVSS, attack scenario, PoC, remediation.",
+      "system_prompt": "You are an authentication security expert. Test every auth mechanism thoroughly. Focus on real bypass scenarios.",
+      "tools_required": [
+        "nuclei",
+        "ffuf",
+        "hydra"
+      ],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-17T13:14:21.697410",
+      "updated_at": "2026-02-17T13:14:21.697410",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "auth",
+        "jwt",
+        "oauth",
+        "session",
+        "2fa"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_access_control",
+      "name": "Access Control Testing",
+      "description": "Test IDOR, BOLA, BFLA, privilege escalation, mass assignment, forced browsing",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive access control testing:\n\n## PHASE 1: IDOR/BOLA TESTING\n- Map all endpoints with object IDs (user_id, order_id, file_id)\n- Test cross-user access: change ID while keeping your auth token\n- CRITICAL: Compare DATA content (not just HTTP status)\n- Test all CRUD operations: read, update, delete other users' objects\n- Test with sequential IDs, UUIDs, encoded references\n\n## PHASE 2: BFLA (FUNCTION LEVEL)\n- Map admin vs user endpoints\n- Access admin endpoints with regular user credentials\n- Test with no authentication at all\n- Check API documentation for hidden admin endpoints\n- Verify ACTIONS execute, not just status 200\n\n## PHASE 3: PRIVILEGE ESCALATION\n- Find role/permission parameters in requests\n- Test role parameter manipulation (role=admin, isAdmin=true)\n- Test JWT claim escalation (admin claim in token)\n- Test registration with elevated role\n\n## PHASE 4: MASS ASSIGNMENT\n- Find object creation/update endpoints\n- Add extra fields (role, isAdmin, verified, plan)\n- Check if hidden fields accepted and stored\n- Test property binding in frameworks (Spring, Rails)\n\n## PHASE 5: FORCED BROWSING\n- Enumerate hidden paths (admin, debug, internal, api/v1)\n- Test backup files, config files, database dumps\n- Check for sensitive files without auth checks\n- Test path traversal in file download endpoints\n\nDATA COMPARISON IS MANDATORY for all findings.\nStatus code alone is NEVER proof of access control failure.\n\nFor each finding: CVSS, comparison evidence, PoC, remediation.",
+      "system_prompt": "You are an access control expert. DATA COMPARISON is mandatory for every finding. Never report based on status codes alone.",
+      "tools_required": [
+        "nuclei",
+        "ffuf",
+        "httpx"
+      ],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-17T13:14:21.697419",
+      "updated_at": "2026-02-17T13:14:21.697419",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "idor",
+        "bola",
+        "bfla",
+        "access_control",
+        "authz"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_ssrf",
+      "name": "SSRF Deep Testing",
+      "description": "Server-Side Request Forgery: internal access, cloud metadata, protocol smuggling",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive SSRF testing:\n\n## PHASE 1: IDENTIFY SSRF VECTORS\n- Find URL parameters (url=, href=, src=, callback=, redirect=, proxy=)\n- Test file import, webhook, PDF generation, screenshot features\n- Check for image/URL preview functionality\n- Test XML with external entity references (XXE\u2192SSRF)\n\n## PHASE 2: BASIC SSRF TESTING\n- Test with attacker-controlled URL (Burp Collaborator, webhook.site, interactsh)\n- Verify server makes the request (DNS callback, HTTP callback)\n- Test HTTP vs HTTPS handling\n- Test different HTTP methods via SSRF\n\n## PHASE 3: INTERNAL ACCESS\n- Test 127.0.0.1, localhost, 0.0.0.0, [::1] variations\n- Test internal RFC1918 ranges (10.x, 172.16.x, 192.168.x)\n- Port scan internal services via SSRF\n- Access internal APIs, admin panels, databases\n\n## PHASE 4: CLOUD METADATA\n- AWS: http://169.254.169.254/latest/meta-data/\n- GCP: http://metadata.google.internal/computeMetadata/v1/\n- Azure: http://169.254.169.254/metadata/instance\n- DigitalOcean: http://169.254.169.254/metadata/v1/\n\n## PHASE 5: FILTER BYPASS\n- URL encoding, double encoding\n- DNS rebinding (attacker domain resolving to internal IP)\n- Redirect chains (your domain \u2192 302 \u2192 internal)\n- Alternative IP formats: decimal, hex, octal\n- IPv6: [::ffff:127.0.0.1], [::1]\n- URL parsing differentials: http://evil@127.0.0.1\n\n## PHASE 6: PROTOCOL SMUGGLING\n- gopher:// for Redis, Memcached, SMTP interaction\n- file:// for local file read\n- dict:// for service interaction\n- ftp:// for FTP bounce scanning\n\nCRITICAL: Status code change alone is NEVER SSRF proof.\nMust show CONTENT from internal service or callback received.\n\nFor each finding: CVSS, internal data retrieved, PoC, remediation.",
+      "system_prompt": "You are an SSRF specialist. Status code changes are NOT proof. Show actual internal data or OOB callbacks.",
+      "tools_required": [
+        "nuclei",
+        "httpx"
+      ],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-17T13:14:21.697425",
+      "updated_at": "2026-02-17T13:14:21.697425",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "ssrf",
+        "cloud",
+        "metadata",
+        "internal"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_file_upload",
+      "name": "File Upload Vulnerability Testing",
+      "description": "Test file upload: web shells, extension bypass, content-type manipulation, path traversal",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive file upload security testing:\n\n## PHASE 1: IDENTIFY UPLOADS\n- Find all file upload functionality (profile photos, documents, imports)\n- Map upload restrictions (size, type, extension)\n- Determine where files are stored and if web-accessible\n\n## PHASE 2: EXTENSION BYPASS\n- Test dangerous extensions: .php, .php5, .phtml, .jsp, .aspx, .py, .pl\n- Double extensions: file.php.jpg, file.jpg.php\n- Null byte: file.php%00.jpg (older systems)\n- Case variation: .pHp, .PhP, .PHP\n- Special extensions: .php7, .phar, .htaccess, .config\n\n## PHASE 3: CONTENT-TYPE MANIPULATION\n- Upload script with image Content-Type (image/jpeg)\n- Upload polyglot file (valid image + embedded script)\n- Test MIME type vs extension mismatch handling\n- Upload with no Content-Type header\n\n## PHASE 4: CONTENT BYPASS\n- Embed code in image metadata (EXIF, ICC profile)\n- Use polyglot files (valid JPEG header + PHP code)\n- Test SVG upload with embedded JavaScript\n- Upload HTML file for stored XSS\n\n## PHASE 5: PATH MANIPULATION\n- Use ../ in filename for path traversal upload\n- Upload .htaccess to enable script execution\n- Upload web.config for IIS configuration manipulation\n- Test filename with special characters\n\n## PHASE 6: POST-UPLOAD\n- Locate uploaded file URL\n- Verify server-side execution\n- Test for file overwrite capabilities\n- Check for race conditions in upload processing\n\nFor each finding: CVSS, upload technique, execution proof, remediation.",
+      "system_prompt": "You are a file upload security expert. Test every bypass technique. Prove code execution.",
+      "tools_required": [
+        "nuclei",
+        "httpx",
+        "ffuf"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697429",
+      "updated_at": "2026-02-17T13:14:21.697429",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "file_upload",
+        "web_shell",
+        "rce"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_business_logic",
+      "name": "Business Logic Testing",
+      "description": "Test workflow manipulation, race conditions, price tampering, process bypass",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive business logic testing:\n\n## PHASE 1: WORKFLOW MAPPING\n- Map all multi-step processes (registration, checkout, approval)\n- Identify expected flow and business rules\n- Document validation points and enforcement locations\n\n## PHASE 2: PROCESS MANIPULATION\n- Skip required steps (jump directly to final step)\n- Change step order (submit payment before verification)\n- Repeat steps that should be one-time (coupon reuse)\n- Modify flow parameters between steps\n\n## PHASE 3: VALUE MANIPULATION\n- Change prices, quantities, discounts in requests\n- Test negative values (negative price, negative quantity)\n- Test zero values where minimum should be enforced\n- Test integer overflow/underflow in calculations\n- Modify currency, tax, or shipping calculations\n\n## PHASE 4: RACE CONDITIONS\n- Double-spend: submit same payment/transfer simultaneously\n- Coupon/reward abuse: redeem multiple times in parallel\n- Registration races: claim same username concurrently\n- Inventory races: purchase beyond stock limit\n- Use HTTP/1.1 pipelining for precise timing\n\n## PHASE 5: BOUNDARY TESTING\n- Test minimum/maximum limits (character counts, file sizes, quantities)\n- Test with boundary values (exactly at limit, limit+1, limit-1)\n- Test with very large numbers, very small numbers\n- Test special values: NaN, Infinity, null, undefined\n\n## PHASE 6: ROLE INTERACTION\n- Test actions between different user types\n- Merchant/customer role confusion\n- Support/admin escalation via feature abuse\n- Multi-tenant data leakage via shared resources\n\nFOCUS ON BUSINESS IMPACT: Financial loss, unauthorized access, data manipulation.\n\nFor each finding: business impact, reproduction steps, CVSS, remediation.",
+      "system_prompt": "You are a business logic testing expert. Think like a fraudster. Test every assumption the application makes.",
+      "tools_required": [
+        "httpx"
+      ],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-17T13:14:21.697433",
+      "updated_at": "2026-02-17T13:14:21.697433",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "business_logic",
+        "race_condition",
+        "workflow"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_api_pentest",
+      "name": "Full API Penetration Test",
+      "description": "Complete API security assessment: REST, GraphQL, auth, injection, business logic",
+      "category": "full_auto",
+      "prompt": "Execute complete API penetration test:\n\n## PHASE 1: API DISCOVERY & MAPPING\n- Discover all API endpoints (REST, GraphQL, SOAP)\n- Find API documentation (Swagger/OpenAPI, GraphQL introspection)\n- Map authentication mechanisms\n- Identify API versions and differences\n\n## PHASE 2: AUTHENTICATION TESTING\n- Test JWT security (none alg, weak secrets, claim manipulation)\n- Test OAuth flows (redirect manipulation, state bypass)\n- Test API key exposure and rotation\n- Test session handling and token refresh\n\n## PHASE 3: AUTHORIZATION TESTING\n- Test BOLA/IDOR on every endpoint with IDs\n- Test BFLA across user roles\n- Test mass assignment on create/update endpoints\n- Test rate limiting and resource quotas\n\n## PHASE 4: INJECTION TESTING\n- SQL/NoSQL injection in all parameters\n- GraphQL injection (if applicable)\n- Command injection in API parameters\n- Header injection in API requests\n\n## PHASE 5: DATA VALIDATION\n- Test input validation (type, length, format)\n- Test for excessive data exposure in responses\n- Check for sensitive data in URLs\n- Test error handling and information disclosure\n\n## PHASE 6: BUSINESS LOGIC\n- Test API-specific business logic flaws\n- Test race conditions on concurrent API calls\n- Test parameter pollution and type juggling\n- Test batch/bulk endpoint abuse\n\nFor each finding: OWASP API Top 10 mapping, CVSS, PoC, remediation.",
+      "system_prompt": "You are an API security specialist conducting a comprehensive API pentest.\nFocus on OWASP API Security Top 10. Every finding needs DATA-based proof.",
+      "tools_required": [
+        "nuclei",
+        "ffuf",
+        "httpx",
+        "sqlmap"
+      ],
+      "estimated_tokens": 10000,
+      "created_at": "2026-02-17T13:14:21.697439",
+      "updated_at": "2026-02-17T13:14:21.697439",
+      "author": "user",
+      "tags": [
+        "full",
+        "api",
+        "pentest",
+        "graphql",
+        "rest"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_cloud_security",
+      "name": "Cloud Security Assessment",
+      "description": "Full cloud security audit: misconfigs, IAM, storage, serverless, containers",
+      "category": "full_auto",
+      "prompt": "Execute comprehensive cloud security assessment:\n\n## PHASE 1: CLOUD ASSET DISCOVERY\n- Identify cloud provider (AWS, Azure, GCP)\n- Enumerate all cloud resources (S3, Lambda, etc.)\n- Map public-facing cloud services\n- Check for exposed cloud management interfaces\n\n## PHASE 2: STORAGE SECURITY\n- Test S3/Blob/GCS bucket permissions (list, read, write)\n- Check for sensitive data in public storage\n- Test for backup data exposure\n- Check for insecure storage configurations\n\n## PHASE 3: IAM & ACCESS CONTROL\n- Test for cloud metadata exposure (SSRF \u2192 credentials)\n- Check IAM role permissions (overly permissive?)\n- Test for credential leakage in code/config\n- Check for cross-account access misconfigs\n\n## PHASE 4: SERVERLESS & CONTAINERS\n- Test serverless function security (Lambda, Functions)\n- Check container configurations (privileged, capabilities)\n- Test for container escape vectors\n- Check Kubernetes/Docker exposed management\n\n## PHASE 5: NETWORK SECURITY\n- Test for overly permissive security groups\n- Check for public-facing internal services\n- Test VPC/VNet segmentation\n- Check for exposed admin ports\n\n## PHASE 6: COMPLIANCE & HARDENING\n- Check against CIS benchmarks\n- Verify encryption at rest and in transit\n- Check logging and monitoring configuration\n- Review IAM policies for least privilege\n\nFor each finding: cloud provider, resource affected, risk level, remediation.",
+      "system_prompt": "You are a cloud security expert. Assess all cloud resources for misconfigurations and security issues.\nFocus on practical exploitation paths, not theoretical risks.",
+      "tools_required": [
+        "nuclei",
+        "httpx",
+        "nmap",
+        "ffuf"
+      ],
+      "estimated_tokens": 8000,
+      "created_at": "2026-02-17T13:14:21.697449",
+      "updated_at": "2026-02-17T13:14:21.697449",
+      "author": "user",
+      "tags": [
+        "full",
+        "cloud",
+        "aws",
+        "azure",
+        "gcp",
+        "iam"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_mobile_api",
+      "name": "Mobile API Security Assessment",
+      "description": "Test mobile application backend APIs: certificate pinning bypass, auth, data exposure",
+      "category": "full_auto",
+      "prompt": "Execute mobile API backend security assessment:\n\n## PHASE 1: API DISCOVERY\n- Identify mobile API endpoints (different from web)\n- Check for API versioning differences\n- Find undocumented mobile-specific endpoints\n- Map authentication flow (JWT, OAuth, custom tokens)\n\n## PHASE 2: AUTHENTICATION\n- Test for missing certificate pinning validation server-side\n- Test auth token security (expiration, rotation, revocation)\n- Check for hardcoded API keys or secrets\n- Test device binding and fingerprinting bypass\n\n## PHASE 3: AUTHORIZATION\n- Test all endpoints for BOLA/IDOR\n- Check for server-side enforcement of client-side restrictions\n- Test for user data segregation\n- Check for admin API exposure to mobile clients\n\n## PHASE 4: DATA SECURITY\n- Check for excessive data in API responses\n- Test for PII exposure in responses\n- Check for sensitive data in push notifications\n- Test for data caching issues\n\n## PHASE 5: INJECTION & LOGIC\n- Test all parameters for injection vulnerabilities\n- Test business logic specific to mobile flow\n- Check for race conditions in mobile-specific features\n- Test deep link handling for security issues\n\nFor each finding: OWASP Mobile Top 10 mapping, CVSS, PoC, remediation.",
+      "system_prompt": "You are a mobile API security expert. Focus on the unique attack surface of mobile backends.",
+      "tools_required": [
+        "nuclei",
+        "httpx",
+        "ffuf"
+      ],
+      "estimated_tokens": 6000,
+      "created_at": "2026-02-17T13:14:21.697460",
+      "updated_at": "2026-02-17T13:14:21.697460",
+      "author": "user",
+      "tags": [
+        "full",
+        "mobile",
+        "api",
+        "ios",
+        "android"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_deserialization",
+      "name": "Deserialization Testing",
+      "description": "Test insecure deserialization: Java, PHP, Python, .NET, Node.js",
+      "category": "vulnerability",
+      "prompt": "Test for insecure deserialization vulnerabilities:\n\n## PHASE 1: IDENTIFY SERIALIZED DATA\n- Check cookies, hidden fields, API parameters for serialized data\n- Look for Java serialized objects (rO0AB, aced0005 in base64)\n- Check for PHP serialized data (O:, a:, s: prefixes)\n- Look for Python pickle (base64 with specific patterns)\n- Check for .NET ViewState (__VIEWSTATE parameter)\n- Check for YAML deserialization points\n\n## PHASE 2: DETERMINE FORMAT\n- Decode and identify serialization format\n- Map the object types/classes being deserialized\n- Identify the framework's serialization library\n- Check for custom vs standard serialization\n\n## PHASE 3: CRAFT PAYLOADS\n- Java: Use ysoserial gadget chains (CommonsBeanutils, CommonsCollections)\n- PHP: Craft POP chain for target framework\n- Python: pickle payloads with __reduce__\n- .NET: Use ysoserial.net for .NET gadget chains\n- Node.js: Test node-serialize RCE payload\n\n## PHASE 4: INJECT AND VERIFY\n- Replace original serialized data with crafted payload\n- Test for command execution (DNS callback, HTTP callback, time delay)\n- Check for error messages revealing class loading\n- Test for denial of service via recursive objects\n\nFor each finding: framework, gadget chain, proof of execution, CVSS, remediation.",
+      "system_prompt": "You are a deserialization security expert. Identify and exploit insecure deserialization across all platforms.",
+      "tools_required": [
+        "nuclei",
+        "httpx"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697464",
+      "updated_at": "2026-02-17T13:14:21.697464",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "deserialization",
+        "java",
+        "php",
+        "rce"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_graphql",
+      "name": "GraphQL Security Testing",
+      "description": "GraphQL: introspection, injection, DoS, authorization, batch attacks",
+      "category": "vulnerability",
+      "prompt": "Perform comprehensive GraphQL security testing:\n\n## PHASE 1: DISCOVERY\n- Find GraphQL endpoints (/graphql, /gql, /query, /api/graphql)\n- Test introspection query (__schema, __type)\n- If introspection disabled: field suggestion brute force\n- Map all queries, mutations, subscriptions\n\n## PHASE 2: AUTHORIZATION\n- Test each query/mutation with different auth levels\n- Check field-level authorization\n- Test for nested object authorization bypass\n- Test subscription access control\n\n## PHASE 3: INJECTION\n- Test all arguments for SQL/NoSQL injection\n- Test for IDOR in query arguments (id, userId)\n- Test for SSRF in URL-type arguments\n- Check for command injection in arguments\n\n## PHASE 4: DENIAL OF SERVICE\n- Test query depth limits (deeply nested queries)\n- Test query complexity limits (wide queries)\n- Test batch query abuse (aliases, array queries)\n- Test for resource exhaustion via subscriptions\n\n## PHASE 5: INFORMATION DISCLOSURE\n- Check for verbose error messages\n- Test for type enumeration via errors\n- Check for debug mode in GraphQL playground\n- Test for schema exposure via error messages\n\nFor each finding: GraphQL-specific risk, CVSS, query PoC, remediation.",
+      "system_prompt": "You are a GraphQL security expert. Test every query, mutation, and subscription for security issues.",
+      "tools_required": [
+        "nuclei",
+        "httpx"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697467",
+      "updated_at": "2026-02-17T13:14:21.697467",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "graphql",
+        "api",
+        "injection",
+        "dos"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_csrf_clickjacking",
+      "name": "CSRF & Clickjacking Assessment",
+      "description": "Test CSRF protection, clickjacking defenses, and cross-origin attacks",
+      "category": "vulnerability",
+      "prompt": "Test for cross-origin attack vulnerabilities:\n\n## PHASE 1: CSRF TESTING\n- Map all state-changing actions (forms, API calls)\n- Check for CSRF tokens on each action\n- Test token validation: remove, empty, wrong token, other user's token\n- Test SameSite cookie attribute enforcement\n- Test Content-Type restrictions (form-data vs json)\n- Build cross-origin PoC for each vulnerable action\n\n## PHASE 2: CLICKJACKING\n- Check X-Frame-Options header on all pages\n- Check CSP frame-ancestors directive\n- Test iframe embedding from external domain\n- Identify clickable sensitive actions (delete, transfer, settings)\n- Build overlay PoC demonstrating the attack\n- Test frame-busting JavaScript bypasses (sandbox attribute)\n\n## PHASE 3: CORS MISCONFIGURATION\n- Test ACAO header reflection for arbitrary origins\n- Check Allow-Credentials with reflected origin\n- Test null origin handling\n- Identify endpoints with sensitive data and weak CORS\n\n## PHASE 4: CROSS-ORIGIN ATTACKS\n- Test postMessage handlers for origin validation\n- Check WebSocket cross-origin restrictions\n- Test JSONP endpoints for data leakage\n- Check for cross-origin resource sharing issues\n\nFor each finding: cross-origin scenario, HTML PoC, CVSS, remediation.",
+      "system_prompt": "You are a cross-origin attack specialist. Build working PoC for every finding.",
+      "tools_required": [
+        "nuclei",
+        "httpx"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697474",
+      "updated_at": "2026-02-17T13:14:21.697474",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "csrf",
+        "clickjacking",
+        "cors",
+        "cross_origin"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_cloud_native",
+      "name": "Cloud-Native Vulnerability Testing",
+      "description": "Test cloud-specific vulns: SSRF\u2192metadata, S3, container escape, serverless",
+      "category": "vulnerability",
+      "prompt": "Test cloud-native specific vulnerabilities:\n\n## PHASE 1: CLOUD METADATA ACCESS\n- Test SSRF vectors to cloud metadata services\n- AWS: 169.254.169.254/latest/meta-data/iam/security-credentials/\n- GCP: metadata.google.internal/computeMetadata/v1/\n- Azure: 169.254.169.254/metadata/instance?api-version=2021-02-01\n- Test IMDSv2 bypass techniques\n\n## PHASE 2: STORAGE MISCONFIGURATIONS\n- Enumerate and test S3 bucket permissions\n- Test Azure Blob Storage public access\n- Test GCS bucket permissions\n- Check for sensitive data in public storage\n\n## PHASE 3: CONTAINER SECURITY\n- Test for Docker socket exposure\n- Check for privileged container escape\n- Test Kubernetes API server access\n- Check for container image vulnerabilities\n\n## PHASE 4: SERVERLESS SECURITY\n- Test Lambda/Functions for injection\n- Check for environment variable exposure\n- Test function URL authentication\n- Check for excessive IAM permissions\n\n## PHASE 5: SUBDOMAIN TAKEOVER\n- Find dangling CNAME records\n- Check for unclaimed cloud resources\n- Test for NS delegation takeover\n- Verify takeover feasibility\n\nFor each finding: cloud platform, resource, access level, CVSS, remediation.",
+      "system_prompt": "You are a cloud-native security expert. Focus on cloud-specific attack vectors and misconfigurations.",
+      "tools_required": [
+        "nuclei",
+        "httpx",
+        "nmap"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697482",
+      "updated_at": "2026-02-17T13:14:21.697482",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "cloud",
+        "ssrf",
+        "metadata",
+        "s3",
+        "container"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "vuln_crypto",
+      "name": "Cryptographic Vulnerability Testing",
+      "description": "Test encryption, hashing, random number generation, TLS, certificate issues",
+      "category": "vulnerability",
+      "prompt": "Assess cryptographic security:\n\n## PHASE 1: TLS/SSL ANALYSIS\n- Scan TLS configuration (protocols, cipher suites)\n- Check for deprecated protocols (SSLv3, TLS 1.0, 1.1)\n- Identify weak cipher suites (RC4, DES, NULL, EXPORT)\n- Test for known TLS vulnerabilities (BEAST, POODLE, Heartbleed, ROBOT, DROWN)\n- Verify certificate chain and key strength\n\n## PHASE 2: PASSWORD STORAGE\n- Check for plain-text password storage (observable in responses/errors)\n- Test for weak hashing (MD5, SHA1 without salt)\n- Check for proper key derivation (bcrypt, scrypt, argon2)\n- Test password reset token randomness\n\n## PHASE 3: TOKEN/SESSION SECURITY\n- Analyze session token entropy\n- Check for predictable token generation\n- Test CSRF token randomness\n- Verify API key length and entropy\n\n## PHASE 4: DATA ENCRYPTION\n- Check for cleartext transmission of sensitive data\n- Verify HSTS enforcement\n- Check for mixed content issues\n- Test for sensitive data in HTTP (non-HTTPS) requests\n\n## PHASE 5: CRYPTOGRAPHIC MISUSE\n- Check for ECB mode usage (pattern preservation)\n- Test for padding oracle vulnerabilities\n- Check for reused nonces/IVs\n- Test for weak random number generation (Math.random vs crypto)\n\nFor each finding: crypto weakness, exploitability, CVSS, remediation.",
+      "system_prompt": "You are a cryptographic security expert. Analyze all crypto implementations for weaknesses.",
+      "tools_required": [
+        "nmap",
+        "nuclei",
+        "sslscan"
+      ],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697489",
+      "updated_at": "2026-02-17T13:14:21.697489",
+      "author": "user",
+      "tags": [
+        "vulnerability",
+        "crypto",
+        "tls",
+        "ssl",
+        "encryption",
+        "hashing"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "recon_api_mapping",
+      "name": "API Endpoint Mapping",
+      "description": "Comprehensive API discovery: REST, GraphQL, SOAP, WebSocket, OpenAPI/Swagger",
+      "category": "recon",
+      "prompt": "Perform comprehensive API endpoint mapping:\n\n1. **REST API Discovery**: Crawl and enumerate all REST endpoints\n2. **GraphQL Detection**: Test /graphql, introspection, schema dump\n3. **OpenAPI/Swagger**: Search for swagger.json, openapi.yaml, api-docs\n4. **SOAP/WSDL**: Check for ?wsdl, /ws/, /soap/ endpoints\n5. **WebSocket**: Identify ws:// and wss:// endpoints\n6. **Hidden APIs**: Analyze JS files for hardcoded endpoints\n7. **API Versioning**: Find and compare all API versions\n\nProduce structured API inventory with methods, params, and auth requirements.",
+      "system_prompt": "You are an API reconnaissance specialist. Map every API endpoint systematically.",
+      "tools_required": [
+        "httpx",
+        "katana",
+        "ffuf",
+        "nuclei"
+      ],
+      "estimated_tokens": 3000,
+      "created_at": "2026-02-17T13:14:21.697500",
+      "updated_at": "2026-02-17T13:14:21.697500",
+      "author": "user",
+      "tags": [
+        "recon",
+        "api",
+        "graphql",
+        "rest",
+        "swagger"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "recon_js_analysis",
+      "name": "JavaScript Security Analysis",
+      "description": "Deep JS analysis: endpoints, secrets, DOM sinks, source maps, hidden routes",
+      "category": "recon",
+      "prompt": "Perform deep JavaScript security analysis:\n\n1. **File Collection**: Crawl and collect all JS files including source maps\n2. **Endpoint Extraction**: Extract all API URLs from fetch/XMLHttpRequest/axios calls\n3. **Secret Detection**: Search for API keys, tokens, credentials in JS\n4. **DOM Sink Analysis**: Map innerHTML, eval, document.write usage\n5. **Route Analysis**: Extract client-side routing tables\n6. **Third-Party Audit**: Inventory libraries, check for known CVEs\n7. **Sensitive Logic**: Find client-side auth, validation, business logic\n\nReport all findings with file paths and risk assessment.",
+      "system_prompt": "You are a JavaScript security analyst. Extract every security-relevant detail from JavaScript.",
+      "tools_required": [
+        "katana",
+        "httpx",
+        "nuclei"
+      ],
+      "estimated_tokens": 3000,
+      "created_at": "2026-02-17T13:14:21.697507",
+      "updated_at": "2026-02-17T13:14:21.697507",
+      "author": "user",
+      "tags": [
+        "recon",
+        "javascript",
+        "secrets",
+        "dom",
+        "source_maps"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "report_bug_bounty",
+      "name": "Bug Bounty Report",
+      "description": "Generate HackerOne/Bugcrowd-style vulnerability report",
+      "category": "reporting",
+      "prompt": "Generate a bug bounty platform report for each finding:\n\nFor each vulnerability:\n1. **Title**: Clear, descriptive title matching platform conventions\n2. **Severity**: P1-P5 with CVSS 3.1 score and vector\n3. **Summary**: One-paragraph executive description\n4. **Steps to Reproduce**: Numbered step-by-step reproduction\n5. **Impact**: Real-world attack scenario and business impact\n6. **Proof of Concept**: Working PoC (curl commands, scripts, or screenshots)\n7. **Remediation**: Specific fix recommendations with code examples\n8. **References**: CWE, OWASP, relevant advisories\n\nFormat: One report per finding, ready to submit to bug bounty platform.\nFocus on IMPACT to maximize bounty value.",
+      "system_prompt": "You are a top bug bounty hunter writing reports. Clear, impactful, with reproducible PoC. Focus on maximizing severity rating through demonstrated impact.",
+      "tools_required": [],
+      "estimated_tokens": 3000,
+      "created_at": "2026-02-17T13:14:21.697511",
+      "updated_at": "2026-02-17T13:14:21.697511",
+      "author": "user",
+      "tags": [
+        "reporting",
+        "bug_bounty",
+        "hackerone",
+        "bugcrowd"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "report_compliance",
+      "name": "Compliance Security Report",
+      "description": "Generate compliance-focused report: PCI-DSS, OWASP, SOC2, HIPAA mapping",
+      "category": "reporting",
+      "prompt": "Generate compliance-focused security report:\n\n## COMPLIANCE MAPPINGS\nFor each finding, map to relevant frameworks:\n1. **OWASP Top 10**: A01-A10 classification\n2. **PCI-DSS**: Requirement mapping (Req 6.5, 8.1, etc.)\n3. **CIS Controls**: Control mapping\n4. **NIST 800-53**: Security control mapping\n5. **SOC 2**: Trust criteria mapping\n\n## REPORT SECTIONS\n1. **Compliance Posture Summary**: Overall compliance status\n2. **Gap Analysis**: Failed controls and requirements\n3. **Risk Register**: Findings with compliance impact\n4. **Remediation Roadmap**: Prioritized by compliance deadline\n5. **Evidence Matrix**: Finding-to-requirement mapping table\n\nUse formal compliance language suitable for auditors.",
+      "system_prompt": "You are a compliance security consultant. Map findings to compliance frameworks with proper control references.",
+      "tools_required": [],
+      "estimated_tokens": 3000,
+      "created_at": "2026-02-17T13:14:21.697514",
+      "updated_at": "2026-02-17T13:14:21.697514",
+      "author": "user",
+      "tags": [
+        "reporting",
+        "compliance",
+        "pci",
+        "owasp",
+        "nist",
+        "soc2"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "exploit_chain",
+      "name": "Vulnerability Chain Exploitation",
+      "description": "Chain multiple findings into high-impact attack scenarios",
+      "category": "exploitation",
+      "prompt": "Analyze all findings and build exploit chains:\n\n## PHASE 1: CATALOG FINDINGS\n- List all confirmed vulnerabilities with their capabilities\n- Identify what each vulnerability provides (info leak, access, execution)\n- Map relationships between findings\n\n## PHASE 2: CHAIN ANALYSIS\n- Open Redirect \u2192 OAuth Token Theft \u2192 Account Takeover\n- SSRF \u2192 Cloud Metadata \u2192 IAM Credentials \u2192 Cloud Compromise\n- XSS \u2192 CSRF \u2192 Account Takeover\n- Info Disclosure \u2192 Targeted Exploit \u2192 RCE\n- IDOR \u2192 PII Exposure \u2192 Social Engineering\n- File Upload \u2192 Web Shell \u2192 Lateral Movement\n\n## PHASE 3: BUILD CHAINS\n- For each viable chain, build a step-by-step attack scenario\n- Create working PoC that demonstrates the full chain\n- Calculate combined CVSS impact score\n- Document prerequisites and limitations\n\n## PHASE 4: IMPACT ASSESSMENT\n- Business impact of each chain\n- Likelihood assessment\n- Risk rating (Critical/High/Medium/Low)\n- Time-to-compromise estimate\n\nPresent chains from highest to lowest impact.",
+      "system_prompt": "You are an exploitation specialist. Chain vulnerabilities for maximum impact.\nThink like an attacker: what is the worst-case scenario with these findings?",
+      "tools_required": [],
+      "estimated_tokens": 4000,
+      "created_at": "2026-02-17T13:14:21.697522",
+      "updated_at": "2026-02-17T13:14:21.697522",
+      "author": "user",
+      "tags": [
+        "exploitation",
+        "chain",
+        "impact",
+        "attack_path"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "exploit_poc_builder",
+      "name": "PoC Generator",
+      "description": "Generate professional proof-of-concept exploits for all findings",
+      "category": "exploitation",
+      "prompt": "Generate proof-of-concept code for all confirmed findings:\n\nFor each vulnerability, create:\n\n## POC FORMATS\n1. **curl command**: One-liner curl demonstrating the vulnerability\n2. **Python script**: Standalone Python PoC script\n3. **HTML page**: For client-side vulns (XSS, CSRF, clickjacking)\n4. **Browser console**: JavaScript PoC for DOM vulnerabilities\n\n## POC REQUIREMENTS\n- Must be REPRODUCIBLE (works without modification)\n- Include clear success/failure indicators\n- Add comments explaining each step\n- Include cleanup instructions if needed\n- Mark with [AUTHORIZED_TEST_ONLY] disclaimer\n\n## VALIDATION CHECKLIST\n- [ ] PoC runs without errors\n- [ ] Success condition is clearly observable\n- [ ] PoC is target-specific (not generic scanner output)\n- [ ] Impact is demonstrated (not just detection)\n\nGenerate PoC in order of severity (Critical \u2192 Info).",
+      "system_prompt": "You are a PoC development specialist. Create clean, reproducible, professional exploit code.\nEvery PoC must demonstrate real impact, not just detection.",
+      "tools_required": [],
+      "estimated_tokens": 5000,
+      "created_at": "2026-02-17T13:14:21.697528",
+      "updated_at": "2026-02-17T13:14:21.697528",
+      "author": "user",
+      "tags": [
+        "exploitation",
+        "poc",
+        "exploit",
+        "code"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_recon_to_report",
+      "name": "Automated Recon-to-Report Pipeline",
+      "description": "Full automated pipeline: deep recon \u2192 smart vuln selection \u2192 testing \u2192 reporting",
+      "category": "full_auto",
+      "prompt": "Execute intelligent automated pipeline:\n\n## STREAM 1: DEEP RECONNAISSANCE (Parallel)\n- Subdomain enumeration (multi-source)\n- Port scanning and service fingerprinting\n- Technology stack identification\n- JavaScript analysis for endpoints and secrets\n- API documentation discovery\n- Cloud asset enumeration\n\n## STREAM 2: SMART VULNERABILITY SELECTION (Parallel)\nBased on discovered technology stack:\n- PHP/WordPress \u2192 Focus: SQLi, LFI, file upload, plugin vulns\n- Java/Spring \u2192 Focus: SSTI, deserialization, EL injection\n- Node.js/Express \u2192 Focus: Prototype pollution, SSRF, NoSQL\n- Python/Django \u2192 Focus: SSTI, CSRF, debug mode\n- .NET/ASP.NET \u2192 Focus: deserialization, ViewState, padding oracle\n- GraphQL \u2192 Focus: introspection, injection, DoS, auth bypass\n- API-heavy \u2192 Focus: BOLA, BFLA, mass assignment, rate limits\n\n## STREAM 3: TOOL SCANNING (Parallel)\n- Run Nuclei with technology-specific templates\n- Run targeted tool scans based on discovered stack\n- Process and validate tool findings\n\n## PHASE 4: DEEP TESTING (Post-Recon)\n- Test top-priority vulnerabilities per technology\n- AI-driven testing with context awareness\n- Validate all findings with negative controls\n\n## PHASE 5: REPORT GENERATION\n- AI-generated professional report\n- Executive summary + technical details\n- Per-finding CVSS, PoC, remediation\n\nThis is a fully autonomous smart pipeline. Minimize false positives.",
+      "system_prompt": "You are an elite autonomous pentester. Execute the full pipeline with intelligence.\nAdapt your testing strategy to the discovered technology stack.\nMinimize false positives. Maximize impact.",
+      "tools_required": [
+        "subfinder",
+        "httpx",
+        "nuclei",
+        "katana",
+        "nmap",
+        "ffuf",
+        "sqlmap"
+      ],
+      "estimated_tokens": 15000,
+      "created_at": "2026-02-17T13:14:21.697548",
+      "updated_at": "2026-02-17T13:14:21.697548",
+      "author": "user",
+      "tags": [
+        "full",
+        "automated",
+        "smart",
+        "pipeline",
+        "adaptive"
+      ],
+      "is_preset": true
+    },
+    {
+      "id": "full_red_team",
+      "name": "Red Team Assessment",
+      "description": "Advanced red team: stealth testing, chained attacks, persistence, data exfiltration",
+      "category": "full_auto",
+      "prompt": "Execute red team assessment with advanced techniques:\n\n## PHASE 1: PASSIVE RECONNAISSANCE\n- OSINT on organization and employees\n- Technology fingerprinting without direct interaction\n- Identify external attack surface\n- Map employee roles and access levels\n\n## PHASE 2: INITIAL ACCESS\n- Identify the most likely entry point\n- Test for: exposed services, weak auth, public exploits\n- Focus on high-value targets first\n- Maintain stealth (avoid triggering WAF/IDS)\n\n## PHASE 3: EXPLOITATION\n- Chain vulnerabilities for maximum access\n- Escalate privileges where possible\n- Test for lateral movement opportunities\n- Document each step of the attack chain\n\n## PHASE 4: POST-EXPLOITATION SIMULATION\n- Identify sensitive data accessible\n- Map internal network/API reach\n- Document what an attacker could achieve\n- Assess data exfiltration paths\n\n## PHASE 5: STEALTH & EVASION\n- WAF bypass techniques for all payloads\n- Encoding and obfuscation strategies\n- Rate limiting avoidance\n- Token rotation and session management\n\n## PHASE 6: COMPREHENSIVE REPORTING\n- Attack narrative (story-based report)\n- Full attack chain documentation\n- Time-to-compromise metrics\n- Defensive improvement recommendations\n\nThink like a real attacker. Prioritize stealth and impact.",
+      "system_prompt": "You are a red team operator. Think strategically. Prioritize stealth and real-world attack scenarios.\nChain vulnerabilities for maximum impact. Document everything for blue team improvement.",
+      "tools_required": [
+        "nmap",
+        "nuclei",
+        "httpx",
+        "katana",
+        "ffuf",
+        "sqlmap"
+      ],
+      "estimated_tokens": 15000,
+      "created_at": "2026-02-17T13:14:21.697551",
+      "updated_at": "2026-02-17T13:14:21.697551",
+      "author": "user",
+      "tags": [
+        "full",
+        "red_team",
+        "advanced",
+        "stealth",
+        "chain"
+      ],
+      "is_preset": true
+    }
+  ]
+}

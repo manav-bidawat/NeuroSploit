@@ -1,0 +1,25 @@
+{
+    "recon": {
+        "network_scan": "Analyze network scan results and identify attack vectors",
+        "web_enum": "Enumerate web application for vulnerabilities",
+        "osint": "Perform OSINT analysis on target organization"
+    },
+    "exploitation": {
+        "web_vuln": "Generate exploit for identified web vulnerability",
+        "network_exploit": "Create network service exploitation strategy",
+        "payload_generation": "Generate obfuscated payload for target system"
+    },
+    "privesc": {
+        "linux": "Analyze Linux system for privilege escalation paths",
+        "windows": "Identify Windows privilege escalation opportunities",
+        "kernel": "Recommend kernel exploits for target version"
+    },
+    "persistence": {
+        "backdoor": "Design stealthy persistence mechanism",
+        "scheduled_task": "Create covert scheduled task for persistence"
+    },
+    "lateral_movement": {
+        "ad_attack": "Plan Active Directory attack path",
+        "credential_reuse": "Strategy for credential reuse across network"
+    }
+}
