@@ -610,7 +610,7 @@ class LLMClient:
 
             elif self.provider == "openai":
                 response = self.client.chat.completions.create(
-                    model=self.model_name or "gpt-4-turbo-preview",
+                    model=self.model_name or "gpt-4o",
                     max_tokens=max_tokens,
                     messages=[
                         {"role": "system", "content": system or default_system},
