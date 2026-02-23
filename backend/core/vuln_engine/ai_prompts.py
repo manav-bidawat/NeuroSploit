@@ -1624,3 +1624,476 @@ VULN_AI_PROMPTS: Dict[str, dict] = {
         "technology_hints": {"general": "OWASP API Security #3. Check: REST APIs without field selection, GraphQL without proper field-level authorization, response serializers including all model fields."}
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Deep Test Prompts — AI-driven iterative testing loop
+# ---------------------------------------------------------------------------
+
+def get_deep_test_plan_prompt(
+    vuln_type: str,
+    context: str,
+    playbook_ctx: str = "",
+    iteration: int = 1,
+    previous_results: str = "",
+) -> str:
+    """Build the PLANNING prompt for _ai_deep_test() Step 2.
+
+    The LLM receives full context about the endpoint and must generate
+    specific, targeted test cases — not generic payloads.
+
+    Args:
+        vuln_type: The vulnerability type being tested (e.g., "sqli_error")
+        context: Rich context string (endpoint, baseline, tech, WAF, params)
+        playbook_ctx: Playbook methodology context for this vuln type
+        iteration: Current iteration number (1-3)
+        previous_results: JSON string of previous test results (for iterations 2+)
+    """
+    # Get per-type proof requirements
+    proof_req = ""
+    try:
+        from backend.core.vuln_engine.system_prompts import VULN_TYPE_PROOF_REQUIREMENTS
+        proof_req = VULN_TYPE_PROOF_REQUIREMENTS.get(vuln_type, "")
+    except ImportError:
+        pass
+
+    # Get per-type AI prompt for detection strategy
+    type_prompt = VULN_AI_PROMPTS.get(vuln_type, {})
+    detection = type_prompt.get("detection_strategy", "")
+    methodology = type_prompt.get("test_methodology", "")
+    payload_hints = type_prompt.get("payload_selection", "")
+
+    iteration_context = ""
+    if iteration > 1 and previous_results:
+        iteration_context = f"""
+## PREVIOUS TEST RESULTS (Round {iteration - 1})
+You have already tested this endpoint. Here are the ACTUAL server responses:
+
+{previous_results}
+
+IMPORTANT: Analyze what happened. What did the server do with your input?
+- Did any payload cause an error? → Exploit that error pattern.
+- Did any payload get reflected? → Check encoding, try context escape.
+- Did any payload change the response? → Investigate what changed and why.
+- Did all payloads get blocked? → Try encoding/obfuscation bypass.
+- Did the server behave identically for all inputs? → Endpoint likely NOT vulnerable.
+
+Generate NEW test cases that build on what you learned. Do NOT repeat previous payloads.
+"""
+
+    return f"""You are an expert penetration tester performing Round {iteration} of iterative {vuln_type.upper()} testing.
+
+## TARGET CONTEXT
+{context}
+
+{f"## DETECTION STRATEGY" + chr(10) + detection if detection else ""}
+{f"## METHODOLOGY" + chr(10) + methodology if methodology else ""}
+{f"## PAYLOAD HINTS" + chr(10) + payload_hints if payload_hints else ""}
+{playbook_ctx}
+{f"## PROOF REQUIREMENTS" + chr(10) + proof_req if proof_req else ""}
+{iteration_context}
+
+## YOUR TASK
+Generate {3 if iteration == 1 else 5} specific test cases for {vuln_type} on this endpoint.
+Each test must be a concrete HTTP request — not a description of what to test.
+
+Respond ONLY with JSON:
+{{
+    "reasoning": "Brief explanation of your testing strategy based on the context",
+    "tests": [
+        {{
+            "name": "Descriptive name of the test",
+            "rationale": "Why this specific test based on what you observed",
+            "method": "GET|POST|PUT|DELETE",
+            "url": "Full URL to test (use actual URLs from context)",
+            "params": {{"param_name": "payload_value"}},
+            "headers": {{"Header-Name": "value"}},
+            "body": "request body if POST/PUT (or empty string)",
+            "content_type": "application/x-www-form-urlencoded|application/json|text/xml",
+            "injection_point": "parameter|header|body|path",
+            "success_indicators": ["what to look for in response that proves vulnerability"],
+            "failure_indicators": ["what indicates NOT vulnerable"]
+        }}
+    ]
+}}
+
+RULES:
+- Use ACTUAL URLs and parameters from the context — don't invent endpoints.
+- Each test MUST have a clear rationale tied to the target's behavior.
+- Include both aggressive tests (exploit attempts) and subtle probes (behavior mapping).
+- If this is Round 2+, your tests MUST be adapted based on previous results."""
+
+
+def get_deep_test_analysis_prompt(
+    vuln_type: str,
+    test_results: str,
+    baseline: str = "",
+    iteration: int = 1,
+) -> str:
+    """Build the ANALYSIS prompt for _ai_deep_test() Step 4.
+
+    The LLM receives actual HTTP responses and must analyze them
+    for vulnerability indicators with anti-hallucination enforcement.
+
+    Args:
+        vuln_type: The vulnerability type being tested
+        test_results: JSON string of test results with actual HTTP responses
+        baseline: Baseline response data for comparison
+        iteration: Current iteration number
+    """
+    # Get per-type proof requirements
+    proof_req = ""
+    try:
+        from backend.core.vuln_engine.system_prompts import VULN_TYPE_PROOF_REQUIREMENTS
+        proof_req = VULN_TYPE_PROOF_REQUIREMENTS.get(vuln_type, "")
+    except ImportError:
+        pass
+
+    type_prompt = VULN_AI_PROMPTS.get(vuln_type, {})
+    verification = type_prompt.get("verification_criteria", "")
+    fp_indicators = type_prompt.get("false_positive_indicators", "")
+
+    return f"""Analyze these HTTP responses for {vuln_type.upper()} vulnerability.
+This is Round {iteration} of iterative testing.
+
+## BASELINE RESPONSE (normal behavior without attack payload)
+{baseline if baseline else "Not available — compare between test responses instead."}
+
+## TEST RESULTS (actual server responses)
+{test_results}
+
+{f"## VERIFICATION CRITERIA" + chr(10) + verification if verification else ""}
+{f"## KNOWN FALSE POSITIVE PATTERNS" + chr(10) + fp_indicators if fp_indicators else ""}
+{f"## PROOF REQUIREMENTS" + chr(10) + proof_req if proof_req else ""}
+
+## ANALYSIS INSTRUCTIONS
+
+For EACH test result, analyze:
+1. Did the response differ from baseline? How exactly? (status, body, headers, timing)
+2. Is the difference CAUSED by the payload, or is it generic application behavior?
+3. Does the response contain proof of execution (not just delivery)?
+4. Would you stake your professional reputation on this finding?
+
+ANTI-HALLUCINATION CHECK:
+- ONLY cite evidence that appears in the ACTUAL response data above.
+- Do NOT infer, assume, or speculate about what "might" happen.
+- If the evidence is ambiguous, it is NOT confirmed.
+
+Respond ONLY with JSON:
+{{
+    "analysis": [
+        {{
+            "test_name": "Name of the test analyzed",
+            "is_vulnerable": true|false,
+            "confidence": "high|medium|low",
+            "evidence": "EXACT string/pattern from the actual response that proves it",
+            "reasoning": "Why this specific evidence proves (or disproves) the vulnerability"
+        }}
+    ],
+    "overall_vulnerable": true|false,
+    "continue_testing": true|false,
+    "next_round_strategy": "What to try next if continue_testing is true (or 'done' if false)",
+    "summary": "One-line summary of findings"
+}}
+
+CRITICAL: Set "continue_testing": true ONLY if you observed promising signals that
+warrant deeper investigation. If all tests show no vulnerability indicators, set false."""
+
+
+# ---------------------------------------------------------------------------
+# Pre-Stream Master Planning Prompt — AI context before parallel streams
+# ---------------------------------------------------------------------------
+
+def get_master_plan_prompt(
+    target: str,
+    initial_response: str = "",
+    technologies: str = "",
+    endpoints_preview: str = "",
+    forms_preview: str = "",
+    waf_info: str = "",
+    playbook_context: str = "",
+) -> str:
+    """Build the master planning prompt executed BEFORE the 3 parallel streams.
+
+    This gives the AI full initial context and asks it to produce a strategic
+    test plan that all 3 streams can reference for context-aware testing.
+    """
+    return f"""You are a senior penetration tester planning a comprehensive security assessment.
+
+## TARGET
+URL: {target}
+
+## INITIAL RECONNAISSANCE
+{f"### Response Headers & Body Fingerprint" + chr(10) + initial_response if initial_response else "Initial probe not yet available."}
+
+{f"### Technologies Detected" + chr(10) + technologies if technologies else "Not yet detected."}
+
+{f"### Endpoints Discovered" + chr(10) + endpoints_preview if endpoints_preview else "No endpoints discovered yet."}
+
+{f"### Forms Found" + chr(10) + forms_preview if forms_preview else "No forms found yet."}
+
+{f"### WAF Detection" + chr(10) + waf_info if waf_info else "No WAF detected."}
+
+{playbook_context}
+
+## YOUR TASK
+Create a MASTER TEST PLAN for this target. This plan will guide 3 parallel testing streams:
+1. **Recon Stream** — what to look for during deeper reconnaissance
+2. **Testing Stream** — which vulnerability types to prioritize and why
+3. **Tool Stream** — which security tools would be most effective
+
+Analyze the target's technology stack, response patterns, and attack surface to produce:
+
+Respond ONLY with JSON:
+{{
+    "target_profile": "Brief description of what this application appears to be",
+    "technology_assessment": "Key technologies and their security implications",
+    "attack_surface_summary": "Primary attack vectors based on initial recon",
+    "priority_vuln_types": ["ordered list of 10-15 vuln types most likely to succeed"],
+    "high_value_endpoints": ["endpoints that deserve the most attention"],
+    "recon_guidance": {{
+        "focus_areas": ["what the recon stream should specifically look for"],
+        "hidden_surface_hints": ["directories, API patterns, or configs to probe"]
+    }},
+    "testing_strategy": {{
+        "immediate_tests": ["vuln types to test RIGHT NOW on the main URL"],
+        "tech_specific_tests": ["tests specific to the detected technology stack"],
+        "bypass_strategies": ["WAF bypass or encoding strategies if WAF detected"]
+    }},
+    "tool_recommendations": {{
+        "priority_tools": ["tools to run first and why"],
+        "tool_arguments": ["specific flags or wordlists for this target"]
+    }},
+    "risk_assessment": "Overall risk level and what makes this target interesting"
+}}
+
+RULES:
+- Base your analysis on ACTUAL data from the initial probe — don't speculate.
+- Prioritize vuln types by LIKELIHOOD of success on THIS specific target.
+- Consider the technology stack when recommending tests (e.g., Java → deserialization, PHP → LFI).
+- If WAF is detected, factor bypass strategies into every recommendation."""
+
+
+# ---------------------------------------------------------------------------
+# Junior Stream AI Payload Generation Prompt
+# ---------------------------------------------------------------------------
+
+def get_junior_ai_test_prompt(
+    url: str,
+    vuln_type: str,
+    params: list,
+    method: str = "GET",
+    tech_context: str = "",
+    master_plan_context: str = "",
+    waf_info: str = "",
+) -> str:
+    """Build prompt for AI-generated payloads in Stream 2 junior testing.
+
+    Instead of hardcoded 3 payloads, the AI generates context-aware payloads
+    tailored to the specific endpoint, parameters, and technology stack.
+    """
+    # Get per-type detection strategy
+    type_prompt = VULN_AI_PROMPTS.get(vuln_type, {})
+    detection = type_prompt.get("detection_strategy", "")
+    payload_hints = type_prompt.get("payload_selection", "")
+
+    params_str = ", ".join(params[:5]) if params else "unknown"
+
+    return f"""You are a penetration tester performing quick, targeted {vuln_type.upper()} testing.
+
+## TARGET
+URL: {url}
+Method: {method}
+Parameters: {params_str}
+{f"Technologies: {tech_context}" if tech_context else ""}
+{f"WAF: {waf_info}" if waf_info else ""}
+{f"Master Plan Context: {master_plan_context}" if master_plan_context else ""}
+
+{f"## DETECTION STRATEGY" + chr(10) + detection if detection else ""}
+{f"## PAYLOAD HINTS" + chr(10) + payload_hints if payload_hints else ""}
+
+## YOUR TASK
+Generate 3-5 targeted {vuln_type} payloads for this specific endpoint.
+Each payload must be crafted for the actual parameters and technology stack.
+
+Respond ONLY with JSON:
+{{
+    "reasoning": "Brief strategy for testing this endpoint",
+    "tests": [
+        {{
+            "param": "parameter name to inject into",
+            "payload": "the actual payload string",
+            "method": "GET|POST",
+            "injection_point": "parameter|header|body",
+            "header_name": "header name if injection_point is header",
+            "success_indicator": "what to look for in response"
+        }}
+    ]
+}}
+
+RULES:
+- Use ACTUAL parameter names from the target.
+- Tailor payloads to the technology stack (don't send PHP payloads to Java apps).
+- If WAF is detected, use encoding/obfuscation in payloads.
+- Include at least one probe payload (behavior mapping) and one exploit payload.
+- Keep it fast — max 5 payloads."""
+
+
+# ---------------------------------------------------------------------------
+# Tool Output AI Analysis Prompt
+# ---------------------------------------------------------------------------
+
+def get_tool_analysis_prompt(
+    tool_name: str,
+    tool_output: str,
+    target: str,
+    existing_findings_summary: str = "",
+) -> str:
+    """Build prompt for AI analysis of security tool output in Stream 3.
+
+    Instead of just ingesting raw tool findings, the AI analyzes the output
+    to identify real vulnerabilities, filter noise, and suggest follow-up tests.
+    """
+    return f"""You are a senior penetration tester analyzing output from the security tool "{tool_name}".
+
+## TARGET
+{target}
+
+## TOOL OUTPUT (raw stdout/stderr)
+```
+{tool_output[:4000]}
+```
+
+{f"## EXISTING FINDINGS (already confirmed)" + chr(10) + existing_findings_summary if existing_findings_summary else ""}
+
+## YOUR TASK
+Analyze this tool output with expert judgment:
+
+1. **True Findings**: Identify REAL vulnerabilities from the output (not informational noise)
+2. **False Positives**: Flag findings that are likely false positives and explain why
+3. **Follow-Up Tests**: Suggest manual tests to confirm ambiguous findings
+4. **Hidden Insights**: What does this output reveal about the target that isn't obvious?
+
+Respond ONLY with JSON:
+{{
+    "real_findings": [
+        {{
+            "title": "Finding title",
+            "severity": "critical|high|medium|low|info",
+            "vulnerability_type": "vuln_type_name",
+            "endpoint": "affected URL",
+            "evidence": "exact evidence from tool output",
+            "confidence": "high|medium|low",
+            "reasoning": "why this is a real finding"
+        }}
+    ],
+    "false_positives": [
+        {{
+            "title": "What the tool flagged",
+            "reason": "why it's a false positive"
+        }}
+    ],
+    "follow_up_tests": [
+        {{
+            "test": "what to test manually",
+            "vuln_type": "vuln_type_name",
+            "endpoint": "URL to test",
+            "rationale": "why this follow-up is needed"
+        }}
+    ],
+    "target_insights": "What this tool output reveals about the target's security posture"
+}}
+
+RULES:
+- Only mark findings as "real" if the tool output contains concrete evidence.
+- Default scanner informational items (server headers, allowed methods) are NOT vulnerabilities.
+- Consider existing findings — don't flag duplicates.
+- Focus on ACTIONABLE output, not noise."""
+
+
+# ---------------------------------------------------------------------------
+# Recon AI Endpoint Analysis Prompt
+# ---------------------------------------------------------------------------
+
+def get_recon_analysis_prompt(
+    target: str,
+    endpoints: str,
+    forms: str = "",
+    technologies: str = "",
+    parameters: str = "",
+    js_files: str = "",
+    api_endpoints: str = "",
+) -> str:
+    """Build prompt for AI analysis of recon results in Stream 1.
+
+    After endpoint discovery, AI analyzes the full attack surface to
+    prioritize endpoints and identify hidden attack vectors.
+    """
+    return f"""You are a penetration tester analyzing reconnaissance results.
+
+## TARGET
+{target}
+
+## DISCOVERED ENDPOINTS
+{endpoints}
+
+{f"## FORMS" + chr(10) + forms if forms else ""}
+{f"## TECHNOLOGIES" + chr(10) + technologies if technologies else ""}
+{f"## PARAMETERS" + chr(10) + parameters if parameters else ""}
+{f"## JAVASCRIPT FILES" + chr(10) + js_files if js_files else ""}
+{f"## API ENDPOINTS" + chr(10) + api_endpoints if api_endpoints else ""}
+
+## YOUR TASK
+Analyze this reconnaissance data as a penetration tester would:
+
+1. **Endpoint Prioritization**: Rank endpoints by attack potential
+2. **Hidden Surface**: Identify probable hidden endpoints or patterns
+3. **Parameter Analysis**: Flag high-risk parameters based on naming conventions
+4. **Technology Vulnerabilities**: Map technologies to known vulnerability classes
+5. **Attack Chains**: Identify potential multi-step attack paths
+
+Respond ONLY with JSON:
+{{
+    "high_priority_endpoints": [
+        {{
+            "url": "endpoint URL",
+            "risk_score": 1-10,
+            "reason": "why this endpoint is high priority",
+            "suggested_vuln_types": ["vuln types to test"]
+        }}
+    ],
+    "hidden_endpoints_to_probe": [
+        {{
+            "url": "URL pattern to try",
+            "rationale": "why this might exist"
+        }}
+    ],
+    "high_risk_parameters": [
+        {{
+            "param": "parameter name",
+            "endpoint": "where found",
+            "risk_type": "what kind of injection it's susceptible to",
+            "priority": "high|medium|low"
+        }}
+    ],
+    "tech_vuln_mapping": [
+        {{
+            "technology": "tech name",
+            "vuln_types": ["relevant vuln types"],
+            "specific_tests": ["targeted test recommendations"]
+        }}
+    ],
+    "attack_chains": [
+        {{
+            "chain": "Step 1 → Step 2 → Impact",
+            "starting_point": "where to begin"
+        }}
+    ],
+    "additional_recon_suggestions": ["What else to look for"]
+}}
+
+RULES:
+- Base ALL analysis on the actual data provided — don't invent endpoints.
+- Prioritize by LIKELIHOOD of exploitation, not theoretical severity.
+- Consider technology-specific vulnerabilities (e.g., Spring → actuator, WordPress → wp-admin).
+- Flag parameters like 'url', 'file', 'path', 'redirect', 'callback', 'template' as high-risk."""

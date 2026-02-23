@@ -2511,6 +2511,429 @@ Respond in JSON:
             }
         return None
 
+    # ── AI Deep Test: Iterative Human-Pentester Loop ─────────────────────
+
+    MAX_DEEP_TEST_ITERATIONS = 3
+
+    async def _ai_deep_test(
+        self,
+        url: str,
+        vuln_type: str,
+        params: List[str],
+        method: str = "GET",
+        form_defaults: Dict = None,
+    ) -> Optional[Finding]:
+        """AI-driven iterative testing loop — the core of LLM-as-VulnEngine.
+
+        Unlike hardcoded payload iteration, this method:
+        1. OBSERVES — builds rich context (baseline, tech, WAF, playbook, memory)
+        2. PLANS — asks LLM to generate targeted test cases
+        3. EXECUTES — sends requests, captures full responses
+        4. ANALYZES — LLM reviews actual responses with anti-hallucination
+        5. ADAPTS — if promising signals found, loops with refined tests
+
+        All confirmed findings go through _judge_finding() (ValidationJudge pipeline).
+        Returns the first confirmed Finding, or None.
+        """
+        if not self.llm.is_available() or not self.session:
+            return None
+
+        if self.is_cancelled():
+            return None
+
+        # Token budget check — skip if budget exhausted
+        if self.token_budget and hasattr(self.token_budget, 'should_skip'):
+            if self.token_budget.should_skip("deep_test"):
+                return None
+
+        await self.log("debug", f"  [AI-DEEP] {vuln_type} on {url[:60]}...")
+
+        # Step 1: OBSERVE — Build rich context
+        context = self._build_deep_test_context(
+            url, vuln_type, params, method, form_defaults
+        )
+
+        # Playbook context
+        playbook_ctx = ""
+        if HAS_PLAYBOOK:
+            try:
+                entry = get_playbook_entry(vuln_type)
+                if entry:
+                    prompts = get_testing_prompts(vuln_type)
+                    bypass = get_bypass_strategies(vuln_type)
+                    anti_fp = get_anti_fp_rules(vuln_type)
+                    playbook_ctx = f"\n## PLAYBOOK METHODOLOGY for {vuln_type}\n"
+                    playbook_ctx += f"Overview: {entry.get('overview', '')}\n"
+                    if prompts:
+                        playbook_ctx += "Testing prompts:\n"
+                        for p in prompts[:5]:
+                            playbook_ctx += f"  - {p}\n"
+                    if bypass:
+                        playbook_ctx += f"Bypass strategies: {', '.join(bypass[:5])}\n"
+                    if anti_fp:
+                        playbook_ctx += f"Anti-FP rules: {', '.join(anti_fp[:3])}\n"
+            except Exception:
+                pass
+
+        # Import the prompt builders
+        try:
+            from backend.core.vuln_engine.ai_prompts import (
+                get_deep_test_plan_prompt, get_deep_test_analysis_prompt
+            )
+        except ImportError:
+            return None
+
+        previous_results_json = ""
+        all_test_results = []
+
+        for iteration in range(1, self.MAX_DEEP_TEST_ITERATIONS + 1):
+            if self.is_cancelled():
+                return None
+
+            # Step 2: PLAN — AI generates targeted test cases
+            plan_prompt = get_deep_test_plan_prompt(
+                vuln_type=vuln_type,
+                context=context,
+                playbook_ctx=playbook_ctx,
+                iteration=iteration,
+                previous_results=previous_results_json,
+            )
+
+            try:
+                plan_response = await self.llm.generate(
+                    plan_prompt,
+                    self._get_enhanced_system_prompt("deep_testing", vuln_type)
+                )
+            except Exception as e:
+                await self.log("debug", f"  [AI-DEEP] Plan error round {iteration}: {e}")
+                break
+
+            # Parse plan JSON
+            plan_match = re.search(r'\{[\s\S]*\}', plan_response)
+            if not plan_match:
+                await self.log("debug", f"  [AI-DEEP] No JSON in plan response round {iteration}")
+                break
+
+            try:
+                plan = json.loads(plan_match.group())
+            except json.JSONDecodeError:
+                await self.log("debug", f"  [AI-DEEP] JSON parse error round {iteration}")
+                break
+
+            tests = plan.get("tests", [])
+            if not tests:
+                await self.log("debug", f"  [AI-DEEP] No tests generated round {iteration}")
+                break
+
+            reasoning = plan.get("reasoning", "")
+            if reasoning and iteration == 1:
+                await self.log("info", f"  [AI-DEEP] Strategy: {reasoning[:120]}")
+
+            # Step 3: EXECUTE — Send requests, capture full responses
+            round_results = await self._execute_ai_planned_tests(tests, url, method)
+            all_test_results.extend(round_results)
+
+            if not round_results:
+                break
+
+            # Build baseline string for analysis
+            baseline_str = ""
+            baseline_resp = self.memory.get_baseline(url)
+            if baseline_resp:
+                baseline_str = (
+                    f"Status: {baseline_resp.get('status', '?')}\n"
+                    f"Headers: {json.dumps(dict(list(baseline_resp.get('headers', {}).items())[:10]), default=str)}\n"
+                    f"Body preview: {baseline_resp.get('body', '')[:500]}\n"
+                    f"Body length: {len(baseline_resp.get('body', ''))}"
+                )
+
+            # Step 4: ANALYZE — AI reviews actual responses
+            results_json = json.dumps(round_results[:5], indent=2, default=str)[:6000]
+
+            analysis_prompt = get_deep_test_analysis_prompt(
+                vuln_type=vuln_type,
+                test_results=results_json,
+                baseline=baseline_str,
+                iteration=iteration,
+            )
+
+            try:
+                analysis_response = await self.llm.generate(
+                    analysis_prompt,
+                    self._get_enhanced_system_prompt("confirmation", vuln_type)
+                )
+            except Exception as e:
+                await self.log("debug", f"  [AI-DEEP] Analysis error round {iteration}: {e}")
+                break
+
+            # Parse analysis JSON
+            analysis_match = re.search(r'\{[\s\S]*\}', analysis_response)
+            if not analysis_match:
+                break
+
+            try:
+                analysis = json.loads(analysis_match.group())
+            except json.JSONDecodeError:
+                break
+
+            # Step 5: Check for confirmed findings
+            for finding_data in analysis.get("analysis", []):
+                if not finding_data.get("is_vulnerable"):
+                    continue
+                if finding_data.get("confidence") not in ("high", "medium"):
+                    continue
+
+                evidence = finding_data.get("evidence", "")
+                test_name = finding_data.get("test_name", "AI Deep Test")
+
+                # Find matching test result for endpoint + response
+                affected_endpoint = url
+                matched_body = ""
+                matched_resp = None
+                for tr in all_test_results:
+                    if tr.get("test_name") == test_name or tr.get("name") == test_name:
+                        affected_endpoint = tr.get("url", url)
+                        matched_body = tr.get("body_preview", "")
+                        matched_resp = tr
+                        break
+
+                # Anti-hallucination: verify evidence exists in actual response
+                if evidence and matched_body:
+                    if not self._evidence_in_response(evidence, matched_body):
+                        await self.log("debug",
+                            f"  [AI-DEEP] REJECTED: evidence not grounded in response for {test_name}")
+                        self.memory.reject_finding(
+                            type("F", (), {
+                                "vulnerability_type": vuln_type,
+                                "affected_endpoint": affected_endpoint,
+                                "parameter": ""
+                            })(),
+                            f"AI evidence not in response: {evidence[:100]}"
+                        )
+                        continue
+
+                # Extract payload from matching test
+                payload = ""
+                param_name = ""
+                if matched_resp:
+                    payload = matched_resp.get("payload", "")
+                    param_name = matched_resp.get("param", params[0] if params else "")
+
+                # Run through ValidationJudge pipeline
+                finding = await self._judge_finding(
+                    vuln_type, affected_endpoint, param_name or (params[0] if params else ""),
+                    payload, evidence, matched_resp or {},
+                    baseline=baseline_resp
+                )
+                if finding:
+                    await self.log("warning",
+                        f"  [AI-DEEP] CONFIRMED {vuln_type} round {iteration}: "
+                        f"{finding_data.get('confidence')} confidence")
+                    return finding
+
+            # Step 6: ADAPT — decide whether to continue
+            if not analysis.get("continue_testing", False):
+                await self.log("debug",
+                    f"  [AI-DEEP] {vuln_type}: done after round {iteration} "
+                    f"({analysis.get('summary', 'no findings')})")
+                break
+
+            # Prepare previous results for next iteration
+            previous_results_json = results_json
+            next_strategy = analysis.get("next_round_strategy", "")
+            if next_strategy:
+                await self.log("debug", f"  [AI-DEEP] Round {iteration + 1} strategy: {next_strategy[:80]}")
+
+        return None
+
+    def _build_deep_test_context(
+        self,
+        url: str,
+        vuln_type: str,
+        params: List[str],
+        method: str,
+        form_defaults: Dict = None,
+    ) -> str:
+        """Build rich observation context for the AI deep test loop.
+
+        Combines: endpoint details, baseline, tech stack, WAF info,
+        parameter analysis, and memory of previous tests.
+        """
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+        # Endpoint details
+        parts = [
+            f"TARGET URL: {url}",
+            f"BASE URL: {base_url}",
+            f"METHOD: {method}",
+            f"PARAMETERS: {', '.join(params[:10]) if params else 'none discovered'}",
+        ]
+
+        if form_defaults:
+            parts.append(f"FORM DEFAULTS: {json.dumps(form_defaults, default=str)[:300]}")
+
+        # Technology stack
+        if self.recon.technologies:
+            parts.append(f"TECHNOLOGIES: {', '.join(self.recon.technologies[:10])}")
+
+        # Baseline response
+        baseline = self.memory.get_baseline(url) or self.memory.get_baseline(base_url)
+        if baseline:
+            parts.append(f"\nBASELINE RESPONSE:")
+            parts.append(f"  Status: {baseline.get('status', '?')}")
+            parts.append(f"  Content-Type: {baseline.get('content_type', '?')}")
+            parts.append(f"  Body length: {len(baseline.get('body', ''))}")
+            body_preview = baseline.get('body', '')[:300]
+            if body_preview:
+                parts.append(f"  Body preview: {body_preview}")
+
+        # WAF information
+        if self._waf_result and self._waf_result.detected_wafs:
+            waf_names = [w.get('name', '?') if isinstance(w, dict) else str(w)
+                         for w in self._waf_result.detected_wafs]
+            parts.append(f"\nWAF DETECTED: {', '.join(waf_names)}")
+            if self.waf_detector:
+                try:
+                    bypasses = self.waf_detector.get_bypass_techniques(self._waf_result)
+                    if bypasses:
+                        parts.append(f"WAF BYPASS TECHNIQUES: {', '.join(bypasses[:5])}")
+                except Exception:
+                    pass
+
+        # Parameter analysis
+        if self.param_analyzer and params:
+            try:
+                param_dict = {p: "" for p in params[:5]}
+                ranked = self.param_analyzer.rank_parameters(param_dict)
+                param_info = []
+                for name, score, vulns in ranked[:5]:
+                    param_info.append(f"  {name}: risk={score:.1f}, likely_vulns={vulns[:3]}")
+                if param_info:
+                    parts.append(f"\nPARAMETER RISK ANALYSIS:")
+                    parts.extend(param_info)
+            except Exception:
+                pass
+
+        # Memory: what was already tested
+        tested_payloads = []
+        for p in params[:3]:
+            if self.memory.was_tested(url, p, vuln_type) or self.memory.was_tested(base_url, p, vuln_type):
+                tested_payloads.append(f"  {p}: already tested (skip)")
+        if tested_payloads:
+            parts.append(f"\nPREVIOUSLY TESTED (from memory):")
+            parts.extend(tested_payloads)
+
+        # RAG context
+        if self.rag_engine:
+            try:
+                rag_ctx = self._get_rag_testing_context(vuln_type, url)
+                if rag_ctx:
+                    parts.append(f"\nRAG CONTEXT (historical patterns):")
+                    parts.append(rag_ctx[:500])
+            except Exception:
+                pass
+
+        return "\n".join(parts)
+
+    async def _execute_ai_planned_tests(
+        self, tests: List[Dict], default_url: str, default_method: str
+    ) -> List[Dict]:
+        """Execute AI-planned test cases, return results with full responses.
+
+        Reuses _make_request() and _make_request_with_injection() for HTTP calls.
+        """
+        results = []
+
+        for test in tests[:5]:
+            if self.is_cancelled():
+                break
+
+            test_url = test.get("url", default_url)
+            test_method = test.get("method", default_method).upper()
+            test_params = test.get("params", {})
+            test_headers = test.get("headers", {})
+            test_body = test.get("body", "")
+            test_name = test.get("name", "unnamed")
+            injection_point = test.get("injection_point", "parameter")
+            content_type = test.get("content_type", "")
+
+            try:
+                start_time = asyncio.get_event_loop().time()
+
+                if injection_point == "header" and test_headers:
+                    # Use header injection for header-based tests
+                    header_name = list(test_headers.keys())[0] if test_headers else "X-Test"
+                    payload = test_headers.get(header_name, "")
+                    resp = await self._make_request_with_injection(
+                        test_url, test_method, payload,
+                        injection_point="header", header_name=header_name
+                    )
+                elif injection_point == "body" and test_body:
+                    # Body injection
+                    resp = await self._make_request_with_injection(
+                        test_url, "POST", test_body,
+                        injection_point="body", param_name="data"
+                    )
+                elif test_params:
+                    # Parameter injection (default)
+                    resp = await self._make_request(test_url, test_method, test_params)
+                else:
+                    # Plain request
+                    resp = await self._make_request(test_url, test_method, {})
+
+                elapsed = asyncio.get_event_loop().time() - start_time
+
+                if resp:
+                    # Extract the payload used for finding creation
+                    payload_used = ""
+                    param_used = ""
+                    if test_params:
+                        for k, v in test_params.items():
+                            if v and len(str(v)) > 3:
+                                payload_used = str(v)
+                                param_used = k
+                                break
+
+                    result = {
+                        "test_name": test_name,
+                        "name": test_name,
+                        "url": test_url,
+                        "method": test_method,
+                        "status": resp.get("status", 0),
+                        "headers": {k: v for k, v in list(resp.get("headers", {}).items())[:15]},
+                        "body_preview": resp.get("body", "")[:1500],
+                        "body_length": len(resp.get("body", "")),
+                        "response_time": round(elapsed, 3),
+                        "payload": payload_used,
+                        "param": param_used,
+                    }
+                    results.append(result)
+                else:
+                    results.append({
+                        "test_name": test_name,
+                        "name": test_name,
+                        "url": test_url,
+                        "method": test_method,
+                        "status": 0,
+                        "error": "No response",
+                        "body_preview": "",
+                        "body_length": 0,
+                    })
+
+            except Exception as e:
+                results.append({
+                    "test_name": test_name,
+                    "name": test_name,
+                    "url": test_url,
+                    "error": str(e),
+                    "status": 0,
+                    "body_preview": "",
+                    "body_length": 0,
+                })
+
+        return results
+
     async def _ai_test_fallback(self, user_prompt: str):
         """Fallback testing when LLM is not available - uses keyword detection"""
         await self.log("info", f"  Running fallback tests for: {user_prompt}")
@@ -4204,6 +4627,28 @@ NOT_VULNERABLE: <reason>"""
         self._playbook_recommended_types: List[str] = []
         self._current_playbook_context: str = ""
 
+        # ── PRE-STREAM AI MASTER PLAN ──
+        # Before launching parallel streams, ask AI for a strategic master plan
+        # that provides context and direction for all 3 streams.
+        self._master_plan: Dict = {}
+        if self.llm.is_available():
+            try:
+                await self.log("info", "[MASTER PLAN] AI strategic planning before streams")
+                master_plan = await self._ai_master_plan()
+                if master_plan:
+                    self._master_plan = master_plan
+                    profile = master_plan.get("target_profile", "")
+                    risk = master_plan.get("risk_assessment", "")
+                    priority_types = master_plan.get("priority_vuln_types", [])
+                    if profile:
+                        await self.log("info", f"  [MASTER PLAN] Profile: {profile[:120]}")
+                    if risk:
+                        await self.log("info", f"  [MASTER PLAN] Risk: {risk[:120]}")
+                    if priority_types:
+                        await self.log("info", f"  [MASTER PLAN] Priority: {', '.join(priority_types[:8])}")
+            except Exception as e:
+                await self.log("debug", f"  [MASTER PLAN] Planning error: {e}")
+
         # ── CONCURRENT PHASE (0-50%): 3 parallel streams ──
         await asyncio.gather(
             self._stream_recon(),            # Stream 1: Recon pipeline
@@ -4563,6 +5008,92 @@ NOT_VULNERABLE: <reason>"""
         await self._update_progress(100, "CLI Agent pentest complete")
         return report
 
+    # ── Pre-Stream AI Master Plan ──
+
+    async def _ai_master_plan(self) -> Dict:
+        """Generate a strategic master plan before launching parallel streams.
+
+        This gives all 3 streams shared context: what to look for, what to
+        prioritize, and what the target looks like from a security perspective.
+        """
+        if not self.llm.is_available():
+            return {}
+
+        try:
+            from backend.core.vuln_engine.ai_prompts import get_master_plan_prompt
+        except ImportError:
+            return {}
+
+        # Gather initial context from whatever recon we have so far
+        initial_response = ""
+        try:
+            resp = await self._make_request(self.target)
+            if resp:
+                status = resp.get("status", 0)
+                headers = resp.get("headers", {})
+                body = resp.get("body", "")
+                server = headers.get("server", headers.get("Server", ""))
+                powered = headers.get("x-powered-by", headers.get("X-Powered-By", ""))
+                content_type = headers.get("content-type", headers.get("Content-Type", ""))
+                initial_response = (
+                    f"Status: {status}\n"
+                    f"Server: {server}\n"
+                    f"X-Powered-By: {powered}\n"
+                    f"Content-Type: {content_type}\n"
+                    f"Response size: {len(body)} bytes\n"
+                    f"Key headers: {json.dumps({k: v for k, v in list(headers.items())[:10]}, default=str)}\n"
+                    f"Body preview: {body[:500]}"
+                )
+        except Exception:
+            pass
+
+        tech_str = ", ".join(self.recon.technologies[:15]) if self.recon.technologies else ""
+        endpoints_str = "\n".join(
+            f"  - {ep.get('url', ep) if isinstance(ep, dict) else ep}"
+            for ep in self.recon.endpoints[:20]
+        ) if self.recon.endpoints else ""
+        forms_str = "\n".join(
+            f"  - {f.get('action', '?')} [{f.get('method', 'GET')}] params: {', '.join(f.get('inputs', []))}"
+            for f in self.recon.forms[:10]
+        ) if self.recon.forms else ""
+        waf_info = ""
+        if hasattr(self, '_waf_result') and self._waf_result and self._waf_result.detected_wafs:
+            waf_info = ", ".join(f"{w.name} ({w.confidence:.0%})" for w in self._waf_result.detected_wafs)
+
+        # Playbook context
+        playbook_ctx = ""
+        if HAS_PLAYBOOK:
+            try:
+                summary = get_playbook_summary()
+                playbook_ctx = "\n## PLAYBOOK CATEGORIES\n" + "\n".join(
+                    f"- {cat}: {', '.join(vts[:5])}" for cat, vts in summary.items()
+                )
+            except Exception:
+                pass
+
+        prompt = get_master_plan_prompt(
+            target=self.target,
+            initial_response=initial_response,
+            technologies=tech_str,
+            endpoints_preview=endpoints_str,
+            forms_preview=forms_str,
+            waf_info=waf_info,
+            playbook_context=playbook_ctx,
+        )
+
+        try:
+            resp_text = await self.llm.generate(
+                prompt,
+                system=self._get_enhanced_system_prompt("strategy")
+            )
+            start = resp_text.index('{')
+            end = resp_text.rindex('}') + 1
+            plan = json.loads(resp_text[start:end])
+            return plan
+        except Exception as e:
+            await self.log("debug", f"  [MASTER PLAN] Parse error: {e}")
+            return {}
+
     # ── Stream 1: Recon Pipeline ──
 
     async def _stream_recon(self):
@@ -4648,39 +5179,60 @@ NOT_VULNERABLE: <reason>"""
                 except Exception as e:
                     await self.log("debug", f"  [WAF] Detection failed: {e}")
 
-            # ── Phase 6: Deep Recon (JS analysis, sitemap, robots, API enum) ──
+            # ── Phase 6: Deep Recon (JS, sitemap, robots, API, framework, fuzzing) ──
             if self.deep_recon:
                 try:
                     prev_ep_count = len(self.recon.endpoints)
 
-                    # Parse sitemap + robots
+                    # Parse sitemap (now with recursive index following)
                     sitemap_urls = await self.deep_recon.parse_sitemap(self.target)
                     for surl in (sitemap_urls or []):
                         if surl and surl.startswith("http"):
                             self.recon.endpoints.append({"url": surl, "method": "GET"})
                             await self._endpoint_queue.put({"url": surl})
+                    if sitemap_urls:
+                        await self.log("info", f"  [DEEP RECON] Sitemap: {len(sitemap_urls)} URLs")
 
-                    robots_urls = await self.deep_recon.parse_robots(self.target)
-                    for rurl in (robots_urls or []):
+                    # Parse robots.txt (now returns tuple: paths, sitemap_urls)
+                    robots_result = await self.deep_recon.parse_robots(self.target)
+                    if isinstance(robots_result, tuple):
+                        robots_paths, robots_sitemaps = robots_result
+                    else:
+                        robots_paths, robots_sitemaps = robots_result or [], []
+                    for rurl in (robots_paths or []):
                         if rurl and rurl.startswith("http"):
                             self.recon.endpoints.append({"url": rurl, "method": "GET"})
                             await self._endpoint_queue.put({"url": rurl})
+                    if robots_paths:
+                        await self.log("info", f"  [DEEP RECON] Robots.txt: {len(robots_paths)} paths")
 
-                    # API enumeration (Swagger/OpenAPI discovery)
+                    # API enumeration (Swagger/OpenAPI/GraphQL discovery)
                     api_schema = await self.deep_recon.enumerate_api(
                         self.target, self.recon.technologies
                     )
                     if api_schema:
                         for ep_info in getattr(api_schema, "endpoints", []):
-                            if isinstance(ep_info, dict) and ep_info.get("path"):
-                                full_url = urljoin(self.target, ep_info["path"])
-                                self.recon.api_endpoints.append(full_url)
-                                await self._endpoint_queue.put({"url": full_url})
+                            if isinstance(ep_info, dict):
+                                ep_path = ep_info.get("url") or ep_info.get("path", "")
+                                if ep_path:
+                                    full_url = urljoin(self.target, ep_path)
+                                    self.recon.api_endpoints.append(full_url)
+                                    ep_method = ep_info.get("method", "GET")
+                                    ep_params = ep_info.get("params", [])
+                                    self.recon.endpoints.append({
+                                        "url": full_url, "method": ep_method, "params": ep_params
+                                    })
+                                    await self._endpoint_queue.put({
+                                        "url": full_url, "method": ep_method, "params": ep_params
+                                    })
+                        if api_schema.endpoints:
+                            await self.log("info", f"  [DEEP RECON] API schema ({api_schema.source}): "
+                                           f"{len(api_schema.endpoints)} endpoints")
 
-                    # JS file analysis
+                    # JS file analysis (enhanced: source maps, parameters, more patterns)
                     if self.recon.js_files:
                         js_result = await self.deep_recon.crawl_js_files(
-                            self.target, self.recon.js_files[:20]
+                            self.target, self.recon.js_files[:30]
                         )
                         if js_result:
                             for js_ep in getattr(js_result, "endpoints", []):
@@ -4688,10 +5240,63 @@ NOT_VULNERABLE: <reason>"""
                                     full_url = urljoin(self.target, js_ep)
                                     self.recon.endpoints.append({"url": full_url})
                                     await self._endpoint_queue.put({"url": full_url})
+                            # Log source map routes
+                            if js_result.source_map_routes:
+                                await self.log("info", f"  [DEEP RECON] Source maps: "
+                                               f"{len(js_result.source_map_routes)} routes from .map files")
+                            # Store discovered JS parameters
+                            if js_result.parameters:
+                                for param_ep, params in js_result.parameters.items():
+                                    for p in params:
+                                        if p not in self.recon.parameters:
+                                            self.recon.parameters[p] = None
+                            if js_result.endpoints:
+                                await self.log("info", f"  [DEEP RECON] JS analysis: "
+                                               f"{len(js_result.endpoints)} endpoints, "
+                                               f"{len(js_result.api_keys)} keys, "
+                                               f"{len(js_result.internal_urls)} internal URLs")
+                            # Store discovered secrets/keys for reporting
+                            if js_result.api_keys:
+                                for key in js_result.api_keys:
+                                    await self.log("info", f"  [DEEP RECON] Found API key: {key[:8]}...{key[-4:]}")
+
+                    # Framework-specific endpoint discovery
+                    try:
+                        from backend.core.deep_recon import EndpointInfo
+                        fw_endpoints = await self.deep_recon.discover_framework_endpoints(
+                            self.target, self.recon.technologies
+                        )
+                        for fw_ep in (fw_endpoints or []):
+                            if isinstance(fw_ep, EndpointInfo):
+                                self.recon.endpoints.append({"url": fw_ep.url, "method": fw_ep.method})
+                                await self._endpoint_queue.put({
+                                    "url": fw_ep.url, "method": fw_ep.method,
+                                    "source": fw_ep.source, "ai_priority": fw_ep.priority >= 7,
+                                })
+                        if fw_endpoints:
+                            await self.log("info", f"  [DEEP RECON] Framework discovery: "
+                                           f"{len(fw_endpoints)} live endpoints")
+                    except Exception as e:
+                        await self.log("debug", f"  [DEEP RECON] Framework discovery error: {e}")
+
+                    # API pattern fuzzing (infer endpoints from known patterns)
+                    try:
+                        known_urls = [ep["url"] if isinstance(ep, dict) else str(ep)
+                                      for ep in self.recon.endpoints if ep]
+                        fuzzed = await self.deep_recon.fuzz_api_patterns(self.target, known_urls)
+                        for fz_ep in (fuzzed or []):
+                            if isinstance(fz_ep, EndpointInfo):
+                                self.recon.endpoints.append({"url": fz_ep.url, "method": fz_ep.method})
+                                await self._endpoint_queue.put({"url": fz_ep.url})
+                        if fuzzed:
+                            await self.log("info", f"  [DEEP RECON] API fuzzing: "
+                                           f"{len(fuzzed)} inferred endpoints alive")
+                    except Exception as e:
+                        await self.log("debug", f"  [DEEP RECON] API fuzzing error: {e}")
 
                     new_eps = len(self.recon.endpoints) - prev_ep_count
                     if new_eps > 0:
-                        await self.log("info", f"  [DEEP RECON] Discovered {new_eps} additional endpoints")
+                        await self.log("info", f"  [DEEP RECON] Total: {new_eps} new endpoints discovered")
                 except Exception as e:
                     await self.log("debug", f"  [DEEP RECON] Error: {e}")
 
@@ -4763,6 +5368,56 @@ NOT_VULNERABLE: <reason>"""
                 except Exception as e:
                     await self.log("debug", f"  [SITE ANALYZER] Error: {e}")
 
+            # ── Phase 9: AI Endpoint Analysis ──
+            # After all recon, ask AI to analyze the full attack surface
+            if self.llm.is_available() and self.recon.endpoints and not self.is_cancelled():
+                try:
+                    await self.log("info", "  [STREAM 1] AI analyzing attack surface...")
+                    recon_analysis = await self._ai_analyze_recon()
+                    if recon_analysis:
+                        # Feed high-priority endpoints back into queue for junior testing
+                        for hp in recon_analysis.get("high_priority_endpoints", [])[:10]:
+                            hp_url = hp.get("url", "")
+                            if hp_url and hp_url.startswith("http"):
+                                await self._endpoint_queue.put({
+                                    "url": hp_url,
+                                    "ai_priority": True,
+                                    "suggested_vulns": hp.get("suggested_vuln_types", []),
+                                })
+                        # Probe hidden endpoints the AI suggests
+                        for hidden in recon_analysis.get("hidden_endpoints_to_probe", [])[:5]:
+                            hurl = hidden.get("url", "")
+                            if hurl:
+                                if not hurl.startswith("http"):
+                                    hurl = urljoin(self.target, hurl)
+                                try:
+                                    probe_resp = await self._make_request(hurl)
+                                    if probe_resp and probe_resp.get("status", 0) not in (0, 404):
+                                        self.recon.endpoints.append({"url": hurl, "method": "GET"})
+                                        await self._endpoint_queue.put({"url": hurl})
+                                        await self.log("info", f"    [AI RECON] Hidden endpoint found: {hurl} "
+                                                       f"(status {probe_resp.get('status', '?')})")
+                                except Exception:
+                                    pass
+                        # Store tech-vuln mappings for later deep testing
+                        tech_vulns = recon_analysis.get("tech_vuln_mapping", [])
+                        if tech_vulns:
+                            tech_recommended = []
+                            for tv in tech_vulns:
+                                tech_recommended.extend(tv.get("vuln_types", []))
+                            if tech_recommended:
+                                self._playbook_recommended_types = list(dict.fromkeys(
+                                    tech_recommended + self._playbook_recommended_types
+                                ))
+                        # Log summary
+                        hp_count = len(recon_analysis.get("high_priority_endpoints", []))
+                        hidden_count = len(recon_analysis.get("hidden_endpoints_to_probe", []))
+                        chain_count = len(recon_analysis.get("attack_chains", []))
+                        await self.log("info", f"    [AI RECON] Analysis: {hp_count} high-priority EPs, "
+                                       f"{hidden_count} hidden probes, {chain_count} attack chains")
+                except Exception as e:
+                    await self.log("debug", f"  [AI RECON] Analysis error: {e}")
+
             ep_count = len(self.recon.endpoints)
             param_count = sum(len(v) if isinstance(v, list) else 1 for v in self.recon.parameters.values())
             tech_count = len(self.recon.technologies)
@@ -4772,6 +5427,56 @@ NOT_VULNERABLE: <reason>"""
             await self.log("warning", f"  [STREAM 1] Recon error: {e}")
         finally:
             self._recon_complete.set()
+
+    async def _ai_analyze_recon(self) -> Dict:
+        """AI analysis of reconnaissance results for Stream 1.
+
+        Analyzes all discovered endpoints, parameters, forms, and technologies
+        to identify high-priority targets and hidden attack surfaces.
+        """
+        try:
+            from backend.core.vuln_engine.ai_prompts import get_recon_analysis_prompt
+        except ImportError:
+            return {}
+
+        endpoints_str = "\n".join(
+            f"  - [{ep.get('method', 'GET')}] {ep.get('url', ep) if isinstance(ep, dict) else ep}"
+            for ep in self.recon.endpoints[:30]
+        )
+        forms_str = "\n".join(
+            f"  - {f.get('action', '?')} [{f.get('method', 'GET')}] "
+            f"inputs: {', '.join(f.get('inputs', []))}"
+            for f in self.recon.forms[:15]
+        )
+        tech_str = ", ".join(self.recon.technologies[:20])
+        params_str = "\n".join(
+            f"  - {url}: {', '.join(p) if isinstance(p, list) else str(p)}"
+            for url, p in list(self.recon.parameters.items())[:15]
+        )
+        js_str = "\n".join(f"  - {js}" for js in self.recon.js_files[:10])
+        api_str = "\n".join(f"  - {api}" for api in self.recon.api_endpoints[:15])
+
+        prompt = get_recon_analysis_prompt(
+            target=self.target,
+            endpoints=endpoints_str,
+            forms=forms_str,
+            technologies=tech_str,
+            parameters=params_str,
+            js_files=js_str,
+            api_endpoints=api_str,
+        )
+
+        try:
+            resp_text = await self.llm.generate(
+                prompt,
+                system=self._get_enhanced_system_prompt("strategy")
+            )
+            start = resp_text.index('{')
+            end = resp_text.rindex('}') + 1
+            return json.loads(resp_text[start:end])
+        except Exception as e:
+            await self.log("debug", f"  [AI RECON] Parse error: {e}")
+            return {}
 
     # ── Stream 2: Junior Pentester ──
 
@@ -4792,8 +5497,23 @@ NOT_VULNERABLE: <reason>"""
                 "crlf_injection", "ssrf", "xxe",
             ]
 
+            # Use master plan priorities if available (from pre-stream AI planning)
+            if hasattr(self, '_master_plan') and self._master_plan:
+                master_priorities = self._master_plan.get("priority_vuln_types", [])
+                immediate = self._master_plan.get("testing_strategy", {}).get("immediate_tests", [])
+                if master_priorities or immediate:
+                    # Merge: immediate first, then master priorities, then defaults
+                    merged = list(dict.fromkeys(
+                        [t for t in immediate if t in self.VULN_TYPE_MAP] +
+                        [t for t in master_priorities if t in self.VULN_TYPE_MAP] +
+                        priority_types
+                    ))
+                    priority_types = merged
+                    await self.log("info", f"  [STREAM 2] Using master plan priorities: "
+                                   f"{', '.join(priority_types[:8])}")
+
             # Ask AI for initial prioritization (quick call)
-            if self.llm.is_available():
+            if self.llm.is_available() and not (hasattr(self, '_master_plan') and self._master_plan.get("priority_vuln_types")):
                 try:
                     # Playbook: gather category overview for smarter prioritization
                     playbook_hint = ""
@@ -4939,11 +5659,6 @@ NOT_VULNERABLE: <reason>"""
             except Exception:
                 pass
 
-        # Use limited payloads for speed
-        payloads = self._get_payloads(vuln_type)[:3]
-        if not payloads:
-            return
-
         method = "GET"
         injection_config = self.VULN_INJECTION_POINTS.get(vuln_type, {"point": "parameter"})
         inj_point = injection_config.get("point", "parameter")
@@ -4951,43 +5666,124 @@ NOT_VULNERABLE: <reason>"""
         if inj_point == "both":
             inj_point = "parameter"
 
-        for param in params[:2]:
-            if self.is_cancelled():
-                return
-            if self.memory.was_tested(url, param, vuln_type):
-                continue
-            for payload in payloads:
+        # ── AI-POWERED PAYLOAD GENERATION ──
+        # Ask AI to generate context-aware payloads instead of using hardcoded ones
+        ai_tests = []
+        if self.llm.is_available():
+            try:
+                from backend.core.vuln_engine.ai_prompts import get_junior_ai_test_prompt
+
+                tech_ctx = ", ".join(self.recon.technologies[:10])
+                waf_info = ""
+                if hasattr(self, '_waf_result') and self._waf_result and self._waf_result.detected_wafs:
+                    waf_info = ", ".join(w.name for w in self._waf_result.detected_wafs)
+
+                # Distill master plan context for this vuln type
+                master_ctx = ""
+                if hasattr(self, '_master_plan') and self._master_plan:
+                    strategy = self._master_plan.get("testing_strategy", {})
+                    if vuln_type in self._master_plan.get("priority_vuln_types", []):
+                        master_ctx = f"This vuln type is PRIORITY per master plan."
+                    bypass = strategy.get("bypass_strategies", [])
+                    if bypass:
+                        master_ctx += f" Bypass strategies: {'; '.join(bypass[:2])}"
+
+                prompt = get_junior_ai_test_prompt(
+                    url=url, vuln_type=vuln_type, params=params,
+                    method=method, tech_context=tech_ctx,
+                    master_plan_context=master_ctx, waf_info=waf_info,
+                )
+                ai_resp = await self.llm.generate(
+                    prompt,
+                    system=self._get_enhanced_system_prompt("testing", vuln_type)
+                )
+                start_idx = ai_resp.index('{')
+                end_idx = ai_resp.rindex('}') + 1
+                ai_data = json.loads(ai_resp[start_idx:end_idx])
+                ai_tests = ai_data.get("tests", [])[:5]
+            except Exception:
+                pass  # Fall back to hardcoded payloads
+
+        # Execute AI-generated tests
+        if ai_tests:
+            for test in ai_tests:
                 if self.is_cancelled():
                     return
-                header_name = ""
-                if inj_point == "header":
-                    headers_list = injection_config.get("headers", ["X-Forwarded-For"])
-                    header_name = headers_list[0] if headers_list else "X-Forwarded-For"
+                t_param = test.get("param", params[0] if params else "id")
+                t_payload = test.get("payload", "")
+                t_method = test.get("method", method)
+                t_inj = test.get("injection_point", inj_point)
+                t_header = test.get("header_name", "")
+                if not t_payload:
+                    continue
+                if self.memory.was_tested(url, t_param, vuln_type):
+                    continue
 
                 test_resp = await self._make_request_with_injection(
-                    url, method, payload,
-                    injection_point=inj_point,
-                    param_name=param,
-                    header_name=header_name,
+                    url, t_method, t_payload,
+                    injection_point=t_inj,
+                    param_name=t_param,
+                    header_name=t_header,
                 )
                 if not test_resp:
                     continue
 
                 is_vuln, evidence = await self._verify_vulnerability(
-                    vuln_type, payload, test_resp
+                    vuln_type, t_payload, test_resp
                 )
                 if is_vuln:
-                    # Run through ValidationJudge pipeline
                     finding = await self._judge_finding(
-                        vuln_type, url, param, payload, evidence, test_resp,
-                        injection_point=inj_point
+                        vuln_type, url, t_param, t_payload, evidence, test_resp,
+                        injection_point=t_inj
                     )
                     if finding:
                         await self._add_finding(finding)
                         self._stream_findings_count += 1
-                        return  # One finding per type per URL is enough for junior
+                        return
 
-                self.memory.record_test(url, param, vuln_type, [payload], False)
+                self.memory.record_test(url, t_param, vuln_type, [t_payload], False)
+        else:
+            # ── FALLBACK: Hardcoded payloads when AI is unavailable ──
+            payloads = self._get_payloads(vuln_type)[:3]
+            if not payloads:
+                return
+
+            for param in params[:2]:
+                if self.is_cancelled():
+                    return
+                if self.memory.was_tested(url, param, vuln_type):
+                    continue
+                for payload in payloads:
+                    if self.is_cancelled():
+                        return
+                    header_name = ""
+                    if inj_point == "header":
+                        headers_list = injection_config.get("headers", ["X-Forwarded-For"])
+                        header_name = headers_list[0] if headers_list else "X-Forwarded-For"
+
+                    test_resp = await self._make_request_with_injection(
+                        url, method, payload,
+                        injection_point=inj_point,
+                        param_name=param,
+                        header_name=header_name,
+                    )
+                    if not test_resp:
+                        continue
+
+                    is_vuln, evidence = await self._verify_vulnerability(
+                        vuln_type, payload, test_resp
+                    )
+                    if is_vuln:
+                        finding = await self._judge_finding(
+                            vuln_type, url, param, payload, evidence, test_resp,
+                            injection_point=inj_point
+                        )
+                        if finding:
+                            await self._add_finding(finding)
+                            self._stream_findings_count += 1
+                            return
+
+                    self.memory.record_test(url, param, vuln_type, [payload], False)
 
     # ── Stream 3: Dynamic Tool Runner ──
 
@@ -5150,11 +5946,88 @@ Respond ONLY with a JSON array:
                 await self.log("info", f"  [TOOL] {tool_name}: completed "
                                f"({result.duration_seconds:.1f}s, no findings)")
 
+            # ── AI ANALYSIS of tool output ──
+            # Ask AI to analyze raw tool output for hidden insights
+            tool_output = (result.stdout or "") + "\n" + (result.stderr or "")
+            if self.llm.is_available() and tool_output.strip():
+                try:
+                    ai_analysis = await self._ai_analyze_tool_output(
+                        tool_name, tool_output
+                    )
+                    if ai_analysis:
+                        # Process AI-identified real findings
+                        for af in ai_analysis.get("real_findings", [])[:5]:
+                            if af.get("confidence") in ("high", "medium"):
+                                vtype = af.get("vulnerability_type", "vulnerability")
+                                endpoint = af.get("endpoint", self.target)
+                                if not self.memory.has_finding_for(vtype, endpoint, ""):
+                                    ai_tool_finding = {
+                                        "title": af.get("title", f"AI-{tool_name} finding"),
+                                        "severity": af.get("severity", "medium"),
+                                        "vulnerability_type": vtype,
+                                        "affected_endpoint": endpoint,
+                                        "evidence": af.get("evidence", ""),
+                                    }
+                                    await self._process_tool_finding(ai_tool_finding, tool_name)
+
+                        # Queue follow-up tests for junior stream
+                        for ft in ai_analysis.get("follow_up_tests", [])[:3]:
+                            ft_url = ft.get("endpoint", "")
+                            if ft_url and ft_url.startswith("http") and hasattr(self, '_endpoint_queue'):
+                                await self._endpoint_queue.put({
+                                    "url": ft_url,
+                                    "ai_priority": True,
+                                    "suggested_vulns": [ft.get("vuln_type", "")],
+                                })
+
+                        insights = ai_analysis.get("target_insights", "")
+                        if insights:
+                            await self.log("info", f"    [AI TOOL] {tool_name} insights: {insights[:120]}")
+                except Exception as e:
+                    await self.log("debug", f"    [AI TOOL] Analysis error for {tool_name}: {e}")
+
             # Feed tool output back into recon context
             self._ingest_tool_results(tool_name, result)
 
         except Exception as e:
             await self.log("warning", f"  [TOOL] {tool_name} failed: {e}")
+
+    async def _ai_analyze_tool_output(self, tool_name: str, tool_output: str) -> Dict:
+        """AI analysis of security tool output for Stream 3.
+
+        Analyzes raw tool stdout/stderr to identify real findings, filter noise,
+        and suggest follow-up manual tests.
+        """
+        try:
+            from backend.core.vuln_engine.ai_prompts import get_tool_analysis_prompt
+        except ImportError:
+            return {}
+
+        # Build existing findings summary to avoid duplicates
+        existing_summary = ""
+        if self.findings:
+            existing_summary = "\n".join(
+                f"  - [{f.severity}] {f.vulnerability_type}: {f.affected_endpoint[:60]}"
+                for f in self.findings[:15]
+            )
+
+        prompt = get_tool_analysis_prompt(
+            tool_name=tool_name,
+            tool_output=tool_output[:4000],
+            target=self.target,
+            existing_findings_summary=existing_summary,
+        )
+
+        try:
+            resp_text = await self.llm.generate(
+                prompt,
+                system=self._get_enhanced_system_prompt("interpretation")
+            )
+            start = resp_text.index('{')
+            end = resp_text.rindex('}') + 1
+            return json.loads(resp_text[start:end])
+        except Exception:
+            return {}
 
     def _ingest_tool_results(self, tool_name: str, result):
         """Feed tool output back into recon context for richer analysis."""
@@ -5816,9 +6689,26 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                     await self._add_finding(finding)
             injection_types = [v for v in injection_types if v != "xss_reflected"]
 
-        # ── Phase B: Injection-based tests against parameterized endpoints ──
+        # ── Phase B: Injection-based tests (AI-first with hardcoded fallback) ──
         if injection_types:
-            await self.log("info", f"  Running {len(injection_types)} injection tests against {len(test_targets)} targets")
+            # Split injection types: AI-deep for top priority, hardcoded for rest
+            ai_deep_budget = 15  # AI deep test for top 15 types
+            if self.token_budget and hasattr(self.token_budget, 'remaining'):
+                try:
+                    remaining = self.token_budget.remaining()
+                    if remaining and remaining < 50000:
+                        ai_deep_budget = 5  # Low budget: fewer AI tests
+                except Exception:
+                    pass
+
+            ai_deep_types = injection_types[:ai_deep_budget] if self.llm.is_available() else []
+            fallback_types = injection_types[ai_deep_budget:] if self.llm.is_available() else injection_types
+
+            if ai_deep_types:
+                await self.log("info",
+                    f"  [AI-DEEP] AI-first testing for {len(ai_deep_types)} priority types "
+                    f"against {len(test_targets)} targets")
+
             for target in test_targets:
                 await self._wait_if_paused()
                 if self.is_cancelled():
@@ -5826,6 +6716,9 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                     return
 
                 url = target.get('url', '')
+                t_method = target.get('method', 'GET')
+                t_params = target.get('params', [])
+                t_form_defaults = target.get('form_defaults', {})
 
                 # Strategy: skip dead endpoints
                 if self.strategy and not self.strategy.should_test_endpoint(url):
@@ -5834,25 +6727,52 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
 
                 await self.log("info", f"  Testing: {url[:60]}...")
 
-                for vuln_type in injection_types:
+                # ── AI-First: Iterative deep test for priority types ──
+                for vuln_type in ai_deep_types:
                     await self._wait_if_paused()
                     if self.is_cancelled():
                         return
 
-                    # Strategy: skip vuln types with diminishing returns on this endpoint
+                    if self.strategy and not self.strategy.should_test_type(vuln_type, url):
+                        continue
+
+                    # Try AI deep test first
+                    finding = await self._ai_deep_test(
+                        url, vuln_type, t_params, t_method, t_form_defaults
+                    )
+                    if finding:
+                        await self._add_finding(finding)
+                        if self.strategy:
+                            self.strategy.record_test_result(url, vuln_type, 200, True, 0)
+                        continue  # AI found it, no fallback needed
+
+                    # AI deep test found nothing — fall back to hardcoded payloads
+                    finding = await self._test_vulnerability_type(
+                        url, vuln_type, t_method, t_params,
+                        form_defaults=t_form_defaults
+                    )
+                    if finding:
+                        await self._add_finding(finding)
+                        if self.strategy:
+                            self.strategy.record_test_result(url, vuln_type, 200, True, 0)
+                    elif self.strategy:
+                        self.strategy.record_test_result(url, vuln_type, 0, False, 0)
+
+                # ── Hardcoded fallback: remaining injection types ──
+                for vuln_type in fallback_types:
+                    await self._wait_if_paused()
+                    if self.is_cancelled():
+                        return
+
                     if self.strategy and not self.strategy.should_test_type(vuln_type, url):
                         continue
 
                     finding = await self._test_vulnerability_type(
-                        url,
-                        vuln_type,
-                        target.get('method', 'GET'),
-                        target.get('params', []),
-                        form_defaults=target.get('form_defaults', {})
+                        url, vuln_type, t_method, t_params,
+                        form_defaults=t_form_defaults
                     )
                     if finding:
                         await self._add_finding(finding)
-                        # Strategy: record success
                         if self.strategy:
                             self.strategy.record_test_result(url, vuln_type, 200, True, 0)
                     elif self.strategy:
@@ -5861,6 +6781,8 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                 # Strategy: recompute priorities periodically
                 if self.strategy and self.strategy.should_recompute_priorities():
                     injection_types = self.strategy.recompute_priorities(injection_types)
+                    ai_deep_types = injection_types[:ai_deep_budget] if self.llm.is_available() else []
+                    fallback_types = injection_types[ai_deep_budget:] if self.llm.is_available() else injection_types
 
         # ── Phase B+: AI-suggested additional tests ──
         if self.llm.is_available() and self.memory.confirmed_findings:
@@ -5887,19 +6809,38 @@ API Endpoints: {self.recon.api_endpoints[:5] if self.recon.api_endpoints else 'N
                         if finding:
                             await self._add_finding(finding)
 
-        # ── Phase C: AI-driven tests (require LLM for intelligent analysis) ──
+        # ── Phase C: AI-driven tests (iterative deep test for AI-only types) ──
         if ai_types and self.llm.is_available():
-            # Prioritize: test top 10 AI-driven types
-            ai_priority = ai_types[:10]
-            await self.log("info", f"  AI-driven testing for {len(ai_priority)} types: {', '.join(ai_priority[:5])}...")
+            ai_priority = ai_types[:15]
+            await self.log("info",
+                f"  [AI-DEEP] AI-driven iterative testing for {len(ai_priority)} types: "
+                f"{', '.join(ai_priority[:5])}...")
             for vt in ai_priority:
                 await self._wait_if_paused()
                 if self.is_cancelled():
                     return
-                await self._ai_dynamic_test(
-                    f"Test the target {self.target} for {vt} vulnerability. "
-                    f"Analyze the application behavior, attempt exploitation, and report only confirmed findings."
-                )
+
+                # Use AI deep test with endpoint-specific context
+                for target in test_targets[:3]:
+                    t_url = target.get('url', self.target)
+                    t_params = target.get('params', [])
+                    t_method = target.get('method', 'GET')
+                    t_form_defaults = target.get('form_defaults', {})
+
+                    finding = await self._ai_deep_test(
+                        t_url, vt, t_params, t_method, t_form_defaults
+                    )
+                    if finding:
+                        await self._add_finding(finding)
+                        break  # Found on one endpoint, move to next type
+
+                # Fallback to original _ai_dynamic_test for types not found via deep test
+                if not any(f.vulnerability_type == vt for f in self.findings):
+                    await self._ai_dynamic_test(
+                        f"Test the target {self.target} for {vt} vulnerability. "
+                        f"Analyze the application behavior, attempt exploitation, "
+                        f"and report only confirmed findings."
+                    )
 
     async def _test_reflected_xss(
         self, url: str, params: List[str], method: str = "GET",

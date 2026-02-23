@@ -268,6 +268,41 @@ belongs to another user or represents privileged information. When in doubt, do 
 three-way comparison: (1) your data, (2) target ID as you, (3) target ID as target user."""
 
 
+PROMPT_ITERATIVE_TESTING = """## ITERATIVE TESTING (OBSERVE → ADAPT → EXPLOIT)
+
+You are testing ITERATIVELY. Each round, you see the actual server responses from your
+previous tests. Use this feedback to refine your attack.
+
+OBSERVE → HYPOTHESIZE → TEST → ANALYZE → ADAPT:
+
+1. OBSERVE: Study the response carefully — status code, headers, body content, timing.
+   What does the server actually DO with your input?
+
+2. HYPOTHESIZE: Based on observed behavior, form a specific hypothesis:
+   - "Parameter reflects input unencoded → likely XSS"
+   - "Single quote causes 500 → backend SQL parsing fails → try error-based SQLi"
+   - "Different response for id=1 vs id=2 → possible IDOR"
+   - "Response includes external URL content → SSRF confirmed, try internal targets"
+
+3. TEST: Design your next test to confirm or deny the hypothesis.
+   Target the SPECIFIC behavior you observed — don't spray generic payloads.
+
+4. ANALYZE: Did the hypothesis hold? What new information did you learn?
+   - Error message leaked DB type → now try DB-specific injection syntax
+   - WAF blocked <script> → try event handlers, SVG, or encoding bypass
+   - Parameter reflected but encoded → try double encoding or context escape
+
+5. ADAPT: Refine your approach based on all accumulated evidence.
+   Each round should be MORE targeted than the last.
+
+RULES:
+- NEVER repeat the same payload twice.
+- NEVER ignore server responses — they contain the clues.
+- ALWAYS explain your reasoning: "I observed X, therefore I'm trying Y."
+- When you find something promising, ESCALATE: probe deeper, not wider.
+- If 3 rounds produce no results, the endpoint is likely NOT vulnerable to this type."""
+
+
 PROMPT_OFFENSIVE_MINDSET = """## OFFENSIVE MINDSET (MID-LEVEL PENTESTER)
 
 You are a MID-LEVEL penetration tester, not a vulnerability scanner.
@@ -442,11 +477,17 @@ PROMPT_CATALOG: Dict[str, Dict] = {
         "content": PROMPT_ACCESS_CONTROL_INTELLIGENCE,
         "contexts": ["testing", "verification", "confirmation"],
     },
+    "iterative_testing": {
+        "id": "iterative_testing",
+        "title": "Iterative Testing (Observe → Adapt → Exploit)",
+        "content": PROMPT_ITERATIVE_TESTING,
+        "contexts": ["deep_testing"],
+    },
     "offensive_mindset": {
         "id": "offensive_mindset",
         "title": "Offensive Mindset (Mid-Level Pentester)",
         "content": PROMPT_OFFENSIVE_MINDSET,
-        "contexts": ["testing", "strategy"],
+        "contexts": ["testing", "strategy", "deep_testing"],
     },
     "architecture_analysis": {
         "id": "architecture_analysis",
@@ -536,6 +577,18 @@ CONTEXT_PROMPTS: Dict[str, List[str]] = {
         "proof_of_execution",
         "think_like_pentester",
         "anti_severity_inflation",
+    ],
+    # Deep testing: AI-driven iterative testing loop (observe → plan → test → analyze → adapt)
+    "deep_testing": [
+        "anti_hallucination",
+        "anti_scanner",
+        "proof_of_execution",
+        "think_like_pentester",
+        "offensive_mindset",
+        "method_variation",
+        "iterative_testing",
+        "negative_controls",
+        "operational_humility",
     ],
 }
 

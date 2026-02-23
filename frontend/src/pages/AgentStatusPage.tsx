@@ -328,234 +328,270 @@ export default function AgentStatusPage() {
   const generateHTMLReport = useCallback(() => {
     if (!status) return ''
 
-    const severityColors: Record<string, string> = {
-      critical: '#dc2626',
-      high: '#ea580c',
-      medium: '#ca8a04',
-      low: '#2563eb',
-      info: '#6b7280',
-    }
+    const esc = (s: string | undefined | null): string =>
+      (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
+    const sevColors: Record<string, string> = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#3b82f6', info:'#6b7280' }
+    const sevBg: Record<string, string> = { critical:'rgba(239,68,68,.08)', high:'rgba(249,115,22,.08)', medium:'rgba(234,179,8,.08)', low:'rgba(59,130,246,.08)', info:'rgba(107,114,128,.08)' }
 
     const owaspMap: Record<string, string> = {
-      'sql injection': 'A03:2021 - Injection',
-      'sqli': 'A03:2021 - Injection',
-      'xss': 'A03:2021 - Injection',
-      'cross-site scripting': 'A03:2021 - Injection',
-      'command injection': 'A03:2021 - Injection',
-      'ssrf': 'A10:2021 - Server-Side Request Forgery',
-      'idor': 'A01:2021 - Broken Access Control',
-      'broken access': 'A01:2021 - Broken Access Control',
-      'auth': 'A07:2021 - Identification and Authentication Failures',
-      'csrf': 'A01:2021 - Broken Access Control',
-      'crypto': 'A02:2021 - Cryptographic Failures',
-      'config': 'A05:2021 - Security Misconfiguration',
-      'header': 'A05:2021 - Security Misconfiguration',
-      'cors': 'A05:2021 - Security Misconfiguration',
-      'clickjacking': 'A05:2021 - Security Misconfiguration',
+      sqli:'A03:2021 Injection', 'sql_injection':'A03:2021 Injection', xss:'A03:2021 Injection', 'xss_reflected':'A03:2021 Injection', 'xss_stored':'A03:2021 Injection',
+      'command_injection':'A03:2021 Injection', ssrf:'A10:2021 SSRF', idor:'A01:2021 Broken Access Control', bola:'A01:2021 Broken Access Control',
+      csrf:'A01:2021 Broken Access Control', 'auth_bypass':'A07:2021 Auth Failures', 'open_redirect':'A01:2021 Broken Access Control',
+      lfi:'A01:2021 Broken Access Control', 'path_traversal':'A01:2021 Broken Access Control', ssti:'A03:2021 Injection',
+      xxe:'A05:2021 Misconfiguration', cors:'A05:2021 Misconfiguration', 'security_headers':'A05:2021 Misconfiguration',
+      'deserialization':'A08:2021 Integrity Failures', 'cryptographic_failures':'A02:2021 Crypto Failures',
     }
+    const getOwasp = (type: string): string => owaspMap[type] || owaspMap[type.split('_')[0]] || ''
 
-    const getOwasp = (title: string, type: string): string => {
-      const searchText = (title + ' ' + type).toLowerCase()
-      for (const [key, value] of Object.entries(owaspMap)) {
-        if (searchText.includes(key)) return value
-      }
-      return ''
-    }
+    // Sort findings by severity order
+    const sevOrder = ['critical','high','medium','low','info']
+    const sorted = [...status.findings].sort((a,b) => sevOrder.indexOf(a.severity) - sevOrder.indexOf(b.severity))
 
-    const sCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
-    for (const f of status.findings) {
-      if (f.severity in sCounts) sCounts[f.severity]++
-    }
+    const sc: Record<string,number> = { critical:0, high:0, medium:0, low:0, info:0 }
+    for (const f of sorted) { if (f.severity in sc) sc[f.severity]++ }
+    const total = sorted.length
 
-    const riskScore = Math.min(100, sCounts.critical * 25 + sCounts.high * 15 + sCounts.medium * 8 + sCounts.low * 3)
-    const riskLevel = riskScore >= 75 ? 'Critical' : riskScore >= 50 ? 'High' : riskScore >= 25 ? 'Medium' : 'Low'
-    const riskColor = riskScore >= 75 ? '#dc2626' : riskScore >= 50 ? '#ea580c' : riskScore >= 25 ? '#ca8a04' : '#22c55e'
+    const riskScore = Math.min(100, sc.critical*25 + sc.high*15 + sc.medium*8 + sc.low*3)
+    const riskLevel = riskScore >= 75 ? 'CRITICAL' : riskScore >= 50 ? 'HIGH' : riskScore >= 25 ? 'MEDIUM' : 'LOW'
+    const riskColor = riskScore >= 75 ? '#ef4444' : riskScore >= 50 ? '#f97316' : riskScore >= 25 ? '#eab308' : '#22c55e'
 
-    const findingsHtml = status.findings.map((f, idx) => {
-      const owasp = getOwasp(f.title, f.vulnerability_type)
-      const cweLink = f.cwe_id ? `https://cwe.mitre.org/data/definitions/${f.cwe_id.replace('CWE-', '')}.html` : ''
+    // Severity distribution bar widths
+    const barPcts = sevOrder.map(s => total > 0 ? Math.round((sc[s]/total)*100) : 0)
+
+    // Table of contents
+    const tocHtml = sorted.map((f, i) =>
+      `<tr>
+        <td style="padding:6px 12px;border-bottom:1px solid #1e293b;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sevColors[f.severity]};margin-right:8px;"></span>${f.severity.toUpperCase()}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #1e293b;"><a href="#finding-${i+1}" style="color:#93c5fd;text-decoration:none;">${esc(f.title)}</a></td>
+        <td style="padding:6px 12px;border-bottom:1px solid #1e293b;color:#94a3b8;font-family:monospace;font-size:12px;">${esc(f.vulnerability_type)}</td>
+      </tr>`
+    ).join('')
+
+    // Build each finding card
+    const findingsHtml = sorted.map((f, idx) => {
+      const color = sevColors[f.severity]
+      const bg = sevBg[f.severity]
+      const owasp = getOwasp(f.vulnerability_type)
+      const cweLink = f.cwe_id ? `https://cwe.mitre.org/data/definitions/${f.cwe_id.replace('CWE-','')}.html` : ''
+      const confScore = f.confidence_score || 0
+      const confColor = confScore >= 80 ? '#22c55e' : confScore >= 50 ? '#eab308' : '#ef4444'
+      const confLabel = confScore >= 80 ? 'Confirmed' : confScore >= 50 ? 'Likely' : 'Unconfirmed'
+
+      const section = (title: string, content: string, icon: string = '') =>
+        `<div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            ${icon ? `<span style="font-size:14px;">${icon}</span>` : ''}
+            <h4 style="margin:0;color:#e2e8f0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">${title}</h4>
+          </div>
+          ${content}
+        </div>`
+
+      const codeBlock = (text: string, maxLen = 3000) =>
+        `<pre style="background:#020617;border:1px solid #1e293b;border-radius:6px;padding:14px;margin:0;overflow-x:auto;font-family:'SF Mono',Monaco,monospace;font-size:12px;line-height:1.6;color:#e2e8f0;white-space:pre-wrap;word-break:break-all;">${esc(text.slice(0,maxLen))}</pre>`
 
       return `
-      <div style="background: #1e293b; border: 1px solid #334155; border-left: 4px solid ${severityColors[f.severity]}; border-radius: 8px; margin-bottom: 24px; overflow: hidden; page-break-inside: avoid;">
-        <div style="padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; background: linear-gradient(135deg, ${severityColors[f.severity]}10 0%, transparent 100%);">
-          <div style="flex: 1;">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-              <span style="background: ${severityColors[f.severity]}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase;">
-                ${f.severity}
-              </span>
-              <span style="color: #64748b; font-size: 12px;">Finding #${idx + 1}</span>
-            </div>
-            <h3 style="margin: 0 0 8px 0; color: white; font-size: 18px; font-weight: 600;">${f.title}</h3>
-            <p style="margin: 0; color: #94a3b8; font-size: 13px; font-family: monospace;">${f.affected_endpoint}</p>
+      <div id="finding-${idx+1}" style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;margin-bottom:28px;overflow:hidden;page-break-inside:avoid;">
+        <!-- Finding Header -->
+        <div style="padding:24px;background:${bg};border-bottom:1px solid #1e293b;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+            <span style="background:${color};color:#fff;padding:4px 14px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">${f.severity}</span>
+            <span style="color:#475569;font-size:12px;font-weight:500;">FINDING #${idx+1} of ${total}</span>
+            ${owasp ? `<span style="background:rgba(251,191,36,.1);color:#fbbf24;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;">${owasp}</span>` : ''}
+            ${confScore > 0 ? `<span style="background:rgba(0,0,0,.3);color:${confColor};padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;">${confScore}% ${confLabel}</span>` : ''}
           </div>
+          <h3 style="margin:0 0 8px;color:#f8fafc;font-size:20px;font-weight:600;line-height:1.3;">${esc(f.title)}</h3>
+          <div style="font-family:'SF Mono',Monaco,monospace;font-size:13px;color:#64748b;word-break:break-all;">${esc(f.affected_endpoint)}</div>
         </div>
 
-        <div style="padding: 20px; border-top: 1px solid #334155;">
-          <!-- Technical Metrics -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; padding: 16px; background: #0f172a; border-radius: 8px; margin-bottom: 20px;">
+        <div style="padding:24px;">
+          <!-- Metrics Row -->
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px;">
             ${f.cvss_score ? `
-            <div>
-              <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">CVSS 3.1 Score</div>
-              <div style="display: flex; align-items: baseline; gap: 8px;">
-                <span style="font-size: 28px; font-weight: 700; color: ${severityColors[f.severity]};">${f.cvss_score}</span>
-                <span style="font-size: 12px; color: #94a3b8;">${f.cvss_score >= 9 ? 'Critical' : f.cvss_score >= 7 ? 'High' : f.cvss_score >= 4 ? 'Medium' : 'Low'}</span>
-              </div>
-              ${f.cvss_vector ? `<div style="font-size: 10px; color: #475569; font-family: monospace; margin-top: 4px;">${f.cvss_vector}</div>` : ''}
-            </div>
-            ` : ''}
+            <div style="background:#020617;border:1px solid #1e293b;border-radius:8px;padding:12px 18px;min-width:120px;">
+              <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">CVSS 3.1</div>
+              <div style="font-size:26px;font-weight:700;color:${color};">${f.cvss_score}</div>
+              ${f.cvss_vector ? `<div style="font-size:9px;color:#475569;font-family:monospace;margin-top:2px;">${esc(f.cvss_vector)}</div>` : ''}
+            </div>` : ''}
             ${f.cwe_id ? `
-            <div>
-              <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">CWE Reference</div>
-              <a href="${cweLink}" target="_blank" style="color: #60a5fa; text-decoration: none; font-size: 14px; font-weight: 500;">${f.cwe_id}</a>
+            <div style="background:#020617;border:1px solid #1e293b;border-radius:8px;padding:12px 18px;min-width:120px;">
+              <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">CWE</div>
+              <a href="${cweLink}" target="_blank" style="color:#60a5fa;text-decoration:none;font-size:15px;font-weight:600;">${esc(f.cwe_id)}</a>
+            </div>` : ''}
+            <div style="background:#020617;border:1px solid #1e293b;border-radius:8px;padding:12px 18px;min-width:120px;">
+              <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">TYPE</div>
+              <div style="color:#e2e8f0;font-size:14px;font-weight:500;">${esc(f.vulnerability_type)}</div>
             </div>
-            ` : ''}
-            ${owasp ? `
-            <div>
-              <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">OWASP Top 10</div>
-              <div style="color: #fbbf24; font-size: 13px; font-weight: 500;">${owasp}</div>
-            </div>
-            ` : ''}
-            <div>
-              <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Vulnerability Type</div>
-              <div style="color: white; font-size: 14px;">${f.vulnerability_type}</div>
-            </div>
+            ${f.parameter ? `
+            <div style="background:#020617;border:1px solid #1e293b;border-radius:8px;padding:12px 18px;min-width:120px;">
+              <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">PARAMETER</div>
+              <div style="color:#38bdf8;font-size:14px;font-family:monospace;">${esc(f.parameter)}</div>
+            </div>` : ''}
           </div>
 
-          <!-- Description -->
-          ${f.description ? `
-          <div style="margin-bottom: 20px;">
-            <h4 style="color: #e2e8f0; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Description</h4>
-            <p style="color: #cbd5e1; margin: 0; line-height: 1.7; font-size: 14px;">${f.description}</p>
-          </div>
-          ` : ''}
+          ${f.description ? section('Description', `<p style="color:#cbd5e1;margin:0;line-height:1.8;font-size:14px;">${esc(f.description)}</p>`, '📋') : ''}
+          ${f.evidence ? section('Evidence', codeBlock(f.evidence), '🔍') : ''}
+          ${f.payload ? section('Payload', codeBlock(f.payload, 1000), '💉') : ''}
 
-          <!-- Affected Endpoint -->
-          <div style="margin-bottom: 20px;">
-            <h4 style="color: #e2e8f0; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Affected Endpoint</h4>
-            <div style="background: #0f172a; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #38bdf8; overflow-x: auto;">${f.affected_endpoint}</div>
-          </div>
+          ${f.request ? section('HTTP Request', codeBlock(f.request, 2000), '📤') : ''}
+          ${f.response ? section('HTTP Response (excerpt)', codeBlock(f.response, 2000), '📥') : ''}
 
-          <!-- Evidence -->
-          ${f.evidence ? `
-          <div style="margin-bottom: 20px;">
-            <h4 style="color: #e2e8f0; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Evidence / Proof of Concept</h4>
-            <pre style="background: #0f172a; padding: 16px; border-radius: 6px; color: #fbbf24; margin: 0; overflow-x: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;">${f.evidence}</pre>
-          </div>
-          ` : ''}
+          ${f.poc_code ? section('Proof of Concept Code', codeBlock(f.poc_code, 4000), '⚡') : ''}
+          ${f.proof_of_execution ? section('Proof of Execution', `<p style="color:#22c55e;margin:0;font-size:14px;line-height:1.7;padding:12px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:6px;">${esc(f.proof_of_execution)}</p>`, '✅') : ''}
 
-          <!-- Impact -->
-          ${f.impact ? `
-          <div style="margin-bottom: 20px;">
-            <h4 style="color: #e2e8f0; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Impact</h4>
-            <p style="color: #cbd5e1; margin: 0; line-height: 1.7; font-size: 14px;">${f.impact}</p>
-          </div>
-          ` : ''}
+          ${f.impact ? section('Impact', `<p style="color:#fbbf24;margin:0;line-height:1.7;font-size:14px;padding:12px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.12);border-radius:6px;">${esc(f.impact)}</p>`, '⚠️') : ''}
 
-          <!-- Remediation -->
           ${f.remediation ? `
-          <div style="background: linear-gradient(135deg, #16a34a15 0%, #16a34a05 100%); border: 1px solid #16a34a40; border-radius: 8px; padding: 16px;">
-            <h4 style="color: #4ade80; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Remediation</h4>
-            <p style="color: #cbd5e1; margin: 0; line-height: 1.7; font-size: 14px;">${f.remediation}</p>
-          </div>
-          ` : ''}
+          <div style="margin-bottom:20px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px;padding:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-size:14px;">🛡️</span>
+              <h4 style="margin:0;color:#4ade80;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Remediation</h4>
+            </div>
+            <p style="color:#cbd5e1;margin:0;line-height:1.8;font-size:14px;">${esc(f.remediation)}</p>
+          </div>` : ''}
 
-          <!-- References -->
-          ${f.references && f.references.length > 0 ? `
-          <div style="margin-top: 20px;">
-            <h4 style="color: #e2e8f0; font-size: 13px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">References</h4>
-            <ul style="margin: 0; padding-left: 20px; color: #94a3b8; font-size: 13px;">
-              ${f.references.map(ref => `<li style="margin-bottom: 4px;"><a href="${ref}" target="_blank" style="color: #60a5fa; text-decoration: none;">${ref}</a></li>`).join('')}
-            </ul>
-          </div>
-          ` : ''}
+          ${f.references && f.references.length > 0 ? section('References',
+            `<ul style="margin:0;padding-left:20px;color:#94a3b8;font-size:13px;line-height:2;">
+              ${f.references.map(ref => `<li><a href="${esc(ref)}" target="_blank" style="color:#60a5fa;text-decoration:none;">${esc(ref)}</a></li>`).join('')}
+            </ul>`, '📚') : ''}
         </div>
-      </div>
-    `
+      </div>`
     }).join('')
 
-    const execSummary = `
-    <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 24px; margin-bottom: 40px;">
-      <h2 style="color: white; margin: 0 0 16px; font-size: 20px; border: none; padding: 0;">Executive Summary</h2>
-      <p style="color: #cbd5e1; line-height: 1.8; margin: 0 0 20px;">
-        This security assessment of <strong style="color: white;">${status.target}</strong> was conducted using NeuroSploit AI-powered penetration testing platform.
-        The assessment identified <strong style="color: white;">${status.findings.length} security findings</strong> across various severity levels.
-        ${sCounts.critical > 0 ? `<span style="color: #dc2626; font-weight: 600;">${sCounts.critical} critical vulnerabilities require immediate attention.</span>` : ''}
-        ${sCounts.high > 0 ? `<span style="color: #ea580c;">${sCounts.high} high-severity issues should be addressed promptly.</span>` : ''}
-      </p>
-      <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: #0f172a; border-radius: 8px;">
-        <div>
-          <div style="color: #64748b; font-size: 12px; text-transform: uppercase; margin-bottom: 4px;">Overall Risk Score</div>
-          <div style="font-size: 32px; font-weight: 700; color: ${riskColor};">${riskScore}/100</div>
-        </div>
-        <div style="flex: 1;">
-          <div style="height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden;">
-            <div style="height: 100%; width: ${riskScore}%; background: ${riskColor}; border-radius: 6px;"></div>
-          </div>
-          <div style="color: ${riskColor}; font-size: 14px; font-weight: 600; margin-top: 8px;">${riskLevel} Risk</div>
-        </div>
-      </div>
-    </div>
-    `
+    // Unique affected endpoints
+    const uniqueEndpoints = [...new Set(sorted.map(f => f.affected_endpoint).filter(Boolean))]
+    const uniqueTypes = [...new Set(sorted.map(f => f.vulnerability_type).filter(Boolean))]
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NeuroSploit Security Report - ${agentId}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 40px; line-height: 1.6; }
-    .container { max-width: 1000px; margin: 0 auto; }
-    .header { text-align: center; margin-bottom: 40px; padding-bottom: 40px; border-bottom: 1px solid #334155; }
-    .header h1 { color: white; margin: 0 0 8px; font-size: 28px; }
-    .header p { color: #94a3b8; margin: 0; font-size: 14px; }
-    .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 40px; }
-    .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; text-align: center; }
-    .stat-value { font-size: 28px; font-weight: bold; margin-bottom: 4px; }
-    .stat-label { color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-    h2 { color: white; border-bottom: 1px solid #334155; padding-bottom: 12px; font-size: 18px; }
-    .footer { text-align: center; margin-top: 40px; padding-top: 40px; border-top: 1px solid #334155; color: #64748b; font-size: 12px; }
-    @media print {
-      body { background: white; color: black; padding: 20px; }
-      .stat-card, .findings > div { border-color: #ddd; background: #f9f9f9; }
-      .header, .footer { border-color: #ddd; }
-    }
-    @media (max-width: 768px) {
-      .stats { grid-template-columns: repeat(3, 1fr); }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security Assessment Report - ${esc(status.target)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#020617;color:#e2e8f0;line-height:1.6}
+  .page{max-width:1100px;margin:0 auto;padding:40px 32px}
+  a{color:#60a5fa}
+  @media print{
+    body{background:#fff;color:#1e293b;font-size:11pt}
+    .page{padding:20px}
+    .no-print{display:none!important}
+    pre{border:1px solid #e2e8f0!important;background:#f8fafc!important;color:#1e293b!important}
+    h1,h2,h3{color:#0f172a!important}
+  }
+  @page{margin:1.5cm;size:A4}
+</style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>NeuroSploit Security Assessment Report</h1>
-      <p>Target: ${status.target} | Agent ID: ${agentId} | Mode: ${MODE_LABELS[status.mode] || status.mode}</p>
-      <p>Date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-    </div>
+<div class="page">
 
-    ${execSummary}
-
-    <div class="stats">
-      <div class="stat-card"><div class="stat-value" style="color: white;">${status.findings.length}</div><div class="stat-label">Total</div></div>
-      <div class="stat-card"><div class="stat-value" style="color: #dc2626;">${sCounts.critical}</div><div class="stat-label">Critical</div></div>
-      <div class="stat-card"><div class="stat-value" style="color: #ea580c;">${sCounts.high}</div><div class="stat-label">High</div></div>
-      <div class="stat-card"><div class="stat-value" style="color: #ca8a04;">${sCounts.medium}</div><div class="stat-label">Medium</div></div>
-      <div class="stat-card"><div class="stat-value" style="color: #2563eb;">${sCounts.low}</div><div class="stat-label">Low</div></div>
-      <div class="stat-card"><div class="stat-value" style="color: #6b7280;">${sCounts.info}</div><div class="stat-label">Info</div></div>
-    </div>
-
-    <h2>Detailed Findings</h2>
-    <div class="findings">
-      ${findingsHtml || '<p style="text-align: center; color: #94a3b8; padding: 40px;">No vulnerabilities identified during this assessment.</p>'}
-    </div>
-
-    <div class="footer">
-      <p><strong>Generated by NeuroSploit v3.0 AI Security Scanner</strong></p>
-      <p>Report generated: ${new Date().toISOString()}</p>
-      <p style="margin-top: 16px; font-size: 11px;">This report is confidential and intended for authorized personnel only.</p>
+  <!-- ═══ Cover / Header ═══ -->
+  <div style="text-align:center;padding:48px 0 40px;border-bottom:2px solid #1e293b;margin-bottom:40px;">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:4px;color:#64748b;margin-bottom:16px;">Confidential Security Report</div>
+    <h1 style="color:#f8fafc;font-size:32px;font-weight:700;margin-bottom:12px;">Penetration Test Report</h1>
+    <div style="color:#94a3b8;font-size:15px;margin-bottom:8px;">Target: <span style="color:#38bdf8;font-family:monospace;">${esc(status.target)}</span></div>
+    <div style="color:#64748b;font-size:13px;">
+      ${new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}
+      &nbsp;&bull;&nbsp; Agent: ${esc(agentId || '')}
+      &nbsp;&bull;&nbsp; Mode: ${esc(MODE_LABELS[status.mode] || status.mode)}
     </div>
   </div>
+
+  <!-- ═══ Risk Overview ═══ -->
+  <div style="display:grid;grid-template-columns:240px 1fr;gap:32px;margin-bottom:40px;align-items:start;">
+    <!-- Risk Gauge -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:28px;text-align:center;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#64748b;margin-bottom:12px;">Risk Level</div>
+      <div style="font-size:56px;font-weight:800;color:${riskColor};line-height:1;">${riskScore}</div>
+      <div style="font-size:13px;color:${riskColor};font-weight:600;margin-top:4px;">${riskLevel}</div>
+      <div style="height:6px;background:#1e293b;border-radius:3px;margin-top:16px;overflow:hidden;">
+        <div style="height:100%;width:${riskScore}%;background:${riskColor};border-radius:3px;"></div>
+      </div>
+    </div>
+    <!-- Severity Breakdown -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:28px;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#64748b;margin-bottom:16px;">Findings Breakdown</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;">
+        <div style="text-align:center;"><div style="font-size:32px;font-weight:700;color:#f8fafc;">${total}</div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Total</div></div>
+        ${sevOrder.map(s => `<div style="text-align:center;"><div style="font-size:32px;font-weight:700;color:${sevColors[s]};">${sc[s]}</div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">${s}</div></div>`).join('')}
+      </div>
+      <!-- Distribution bar -->
+      ${total > 0 ? `
+      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;">
+        ${sevOrder.map((s,i) => barPcts[i] > 0 ? `<div style="width:${barPcts[i]}%;background:${sevColors[s]};"></div>` : '').join('')}
+      </div>` : ''}
+    </div>
+  </div>
+
+  <!-- ═══ Executive Summary ═══ -->
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:28px;margin-bottom:40px;">
+    <h2 style="color:#f8fafc;font-size:18px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1e293b;">Executive Summary</h2>
+    <p style="color:#cbd5e1;line-height:1.9;font-size:14px;">
+      A security assessment was performed against <strong style="color:#f8fafc;">${esc(status.target)}</strong>
+      using NeuroSploit AI-powered penetration testing. The assessment identified
+      <strong style="color:#f8fafc;">${total} security finding${total !== 1 ? 's' : ''}</strong>
+      across <strong>${uniqueEndpoints.length}</strong> unique endpoint${uniqueEndpoints.length !== 1 ? 's' : ''}
+      covering <strong>${uniqueTypes.length}</strong> distinct vulnerability type${uniqueTypes.length !== 1 ? 's' : ''}.
+      ${sc.critical > 0 ? `<br/><br/><span style="color:#ef4444;font-weight:600;">&#9888; ${sc.critical} critical-severity finding${sc.critical > 1 ? 's' : ''} require${sc.critical === 1 ? 's' : ''} immediate remediation.</span>` : ''}
+      ${sc.high > 0 ? ` <span style="color:#f97316;font-weight:500;">${sc.high} high-severity finding${sc.high > 1 ? 's' : ''} should be addressed promptly.</span>` : ''}
+      ${sc.critical === 0 && sc.high === 0 && total > 0 ? ` No critical or high-severity vulnerabilities were identified.` : ''}
+      ${total === 0 ? ` No vulnerabilities were identified during this assessment.` : ''}
+    </p>
+  </div>
+
+  ${total > 0 ? `
+  <!-- ═══ Table of Contents ═══ -->
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:28px;margin-bottom:40px;">
+    <h2 style="color:#f8fafc;font-size:18px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1e293b;">Findings Index</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid #1e293b;">
+          <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;width:100px;">Severity</th>
+          <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;">Finding</th>
+          <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:1px;width:180px;">Type</th>
+        </tr>
+      </thead>
+      <tbody>${tocHtml}</tbody>
+    </table>
+  </div>
+
+  <!-- ═══ Detailed Findings ═══ -->
+  <div style="margin-bottom:40px;">
+    <h2 style="color:#f8fafc;font-size:20px;font-weight:600;margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid #1e293b;">
+      Detailed Findings <span style="color:#64748b;font-weight:400;font-size:14px;">(${total})</span>
+    </h2>
+    ${findingsHtml}
+  </div>
+  ` : ''}
+
+  <!-- ═══ Scope & Methodology ═══ -->
+  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:28px;margin-bottom:40px;">
+    <h2 style="color:#f8fafc;font-size:18px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #1e293b;">Scope &amp; Methodology</h2>
+    <table style="width:100%;font-size:13px;color:#cbd5e1;">
+      <tr><td style="padding:6px 0;color:#64748b;width:180px;">Target URL</td><td style="padding:6px 0;font-family:monospace;">${esc(status.target)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Assessment Mode</td><td style="padding:6px 0;">${esc(MODE_LABELS[status.mode] || status.mode)}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Agent ID</td><td style="padding:6px 0;font-family:monospace;">${esc(agentId || '')}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Start Time</td><td style="padding:6px 0;">${status.started_at ? new Date(status.started_at).toLocaleString() : 'N/A'}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">End Time</td><td style="padding:6px 0;">${status.completed_at ? new Date(status.completed_at).toLocaleString() : 'N/A'}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Endpoints Tested</td><td style="padding:6px 0;">${uniqueEndpoints.length}</td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Vulnerability Types</td><td style="padding:6px 0;">${uniqueTypes.length}</td></tr>
+    </table>
+    <p style="color:#94a3b8;font-size:12px;margin-top:16px;line-height:1.7;">
+      This assessment was conducted using NeuroSploit v3 AI-powered penetration testing platform with 100 vulnerability type coverage,
+      automated payload generation, and AI-driven validation. Findings were validated through negative control testing,
+      proof-of-execution verification, and confidence scoring.
+    </p>
+  </div>
+
+  <!-- ═══ Footer ═══ -->
+  <div style="text-align:center;padding:32px 0;border-top:1px solid #1e293b;color:#475569;font-size:12px;">
+    <div style="margin-bottom:8px;"><strong style="color:#94a3b8;">Generated by NeuroSploit v3</strong> &mdash; AI-Powered Penetration Testing Platform</div>
+    <div>${new Date().toISOString()}</div>
+    <div style="margin-top:12px;font-size:11px;color:#334155;">CONFIDENTIAL &mdash; This document contains sensitive security information. Distribution is restricted to authorized personnel only.</div>
+  </div>
+
+</div>
 </body>
 </html>`
   }, [status, agentId])

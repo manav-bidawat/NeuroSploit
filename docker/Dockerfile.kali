@@ -128,4 +128,4 @@ HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
 
 WORKDIR /opt/output
 
-ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["bash"]

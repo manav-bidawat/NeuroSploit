@@ -442,9 +442,12 @@ r = VulnerabilityRegistry()
 p = PayloadGenerator()
 total_payloads = sum(len(v) for v in p.payload_libraries.values())
 total_prompts = sum(len(get_testing_prompts(v)) for v in PENTEST_PLAYBOOK)
+# Count AI prompt builder functions (deep test + stream prompts)
+import inspect, backend.core.vuln_engine.ai_prompts as ap
+prompt_funcs = [n for n, f in inspect.getmembers(ap, inspect.isfunction) if n.startswith('get_')]
 print(f'  OK  Registry: {len(r.VULNERABILITY_INFO)} types, {len(r.TESTER_CLASSES)} testers')
 print(f'  OK  Payloads: {total_payloads} across {len(p.payload_libraries)} categories')
-print(f'  OK  AI Prompts: {len(VULN_AI_PROMPTS)} per-vuln decision prompts')
+print(f'  OK  AI Prompts: {len(VULN_AI_PROMPTS)} per-vuln + {len(prompt_funcs)} builder functions')
 print(f'  OK  Playbook: {len(PENTEST_PLAYBOOK)} vuln types, {total_prompts} testing prompts')
 print(f'  OK  System Prompts: {len(CONTEXT_PROMPTS)} contexts, {len(VULN_TYPE_PROOF_REQUIREMENTS)} proof reqs')
 " 2>&1 || true
@@ -455,8 +458,10 @@ print(f'  OK  System Prompts: {len(CONTEXT_PROMPTS)} contexts, {len(VULN_TYPE_PR
 from backend.core.rag.reasoning_templates import REASONING_TEMPLATES
 from backend.core.rag.few_shot import FewShotSelector
 fs = FewShotSelector()
+curated = getattr(fs, '_curated_examples', {})
+total_ex = sum(len(ex) for cat in curated.values() if isinstance(cat, dict) for ex in cat.values() if isinstance(ex, list))
 print(f'  OK  Reasoning Templates: {len(REASONING_TEMPLATES)} vuln types')
-print(f'  OK  Few-Shot Examples: {len(fs.examples)} curated TP/FP examples')
+print(f'  OK  Few-Shot Examples: {len(curated)} categories, {total_ex} curated TP/FP examples')
 " 2>&1 || true
 fi
 
@@ -588,8 +593,13 @@ echo -e "  - System Prompts:     12 anti-hallucination composable prompts"
 echo -e "  - Methodology:        Deep injection from .md methodology files"
 echo -e "  - Knowledge Base:     100 vuln types + RAG-indexed insights"
 echo -e ""
-echo -e "  ${BLUE}Autonomous Agent (Mid-Level Pentester):${NC}"
-echo -e "  - Auto Pentest:       3 parallel streams (recon + junior + tools)"
+echo -e "  ${BLUE}Autonomous Agent (AI-Powered Pentester):${NC}"
+echo -e "  - Auto Pentest:       3 AI-parallel streams (recon + junior + tools)"
+echo -e "  - AI Master Plan:     Pre-stream strategic planning (target profiling)"
+echo -e "  - AI Deep Test:       Iterative OBSERVE->PLAN->EXECUTE->ANALYZE->ADAPT"
+echo -e "  - AI Recon Analysis:  Endpoint prioritization, hidden surface probing"
+echo -e "  - AI Payload Gen:     Context-aware payloads per endpoint x vuln_type"
+echo -e "  - AI Tool Analysis:   Tool output analysis for real findings vs noise"
 echo -e "  - Full IA Testing:    Methodology-driven comprehensive sessions"
 echo -e "  - Multi-Session:      Up to 5 concurrent scans"
 echo -e "  - Pause/Resume/Stop:  Real-time scan control with fast cancel"
