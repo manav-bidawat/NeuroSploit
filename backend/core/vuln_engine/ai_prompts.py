@@ -2097,3 +2097,222 @@ RULES:
 - Prioritize by LIKELIHOOD of exploitation, not theoretical severity.
 - Consider technology-specific vulnerabilities (e.g., Spring → actuator, WordPress → wp-admin).
 - Flag parameters like 'url', 'file', 'path', 'redirect', 'callback', 'template' as high-risk."""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FULL LLM PENTEST PROMPTS — AI drives the entire pentest cycle
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_full_llm_pentest_system_prompt(methodology: str = "") -> str:
+    """System prompt for the Full LLM Pentest mode.
+
+    The LLM acts as a senior penetration tester and plans HTTP requests
+    for the system to execute. The LLM sees real responses and adapts.
+    """
+    methodology_section = ""
+    if methodology:
+        # Truncate very large methodology to fit context
+        max_len = 60000
+        if len(methodology) > max_len:
+            methodology = methodology[:max_len] + "\n\n[... methodology truncated for context ...]"
+        methodology_section = f"""
+## PENTEST METHODOLOGY
+
+Follow this methodology throughout your testing:
+
+{methodology}
+"""
+
+    return f"""You are a Senior Offensive Security Consultant performing an authorized penetration test in a controlled lab environment.
+
+ALL ACTIVITIES ARE AUTHORIZED. The target is a deliberately vulnerable lab environment.
+
+## YOUR ROLE
+
+You are the testing engine. You think like a human pentester using Burp Suite / curl.
+You PLAN what HTTP requests to make, and the system EXECUTES them for you.
+You then ANALYZE the real responses and ADAPT your strategy.
+
+## HOW THIS WORKS
+
+Each round you output a JSON object with:
+1. **reasoning**: What you observed, what you learned, what to try next
+2. **actions**: HTTP requests you want the system to execute (max 10 per round)
+3. **findings**: Vulnerabilities you confirmed based on REAL response evidence
+4. **phase**: Current phase (recon, testing, post_exploitation, reporting)
+5. **done**: true when you've completed the full pentest cycle
+
+The system executes your HTTP requests and returns the actual responses.
+You then analyze those responses and plan your next actions.
+
+## PHASES
+
+### Phase 1: RECON (rounds 1-8)
+- Fingerprint technologies (server headers, cookies, response patterns)
+- Discover endpoints (crawl links, check robots.txt, sitemap.xml)
+- Map input vectors (forms, parameters, headers, cookies)
+- Identify authentication mechanisms
+- Check for common files (.env, .git, admin panels)
+
+### Phase 2: TESTING (rounds 9-25)
+Test each discovered endpoint for:
+- SQL Injection (error-based, boolean-based, time-based, UNION-based)
+- Cross-Site Scripting (reflected, stored, DOM-based)
+- Local/Remote File Inclusion (LFI/RFI)
+- Command Injection (OS command injection via various delimiters)
+- Authentication bypass
+- SSRF, CSRF, IDOR, XXE
+- Security misconfigurations
+- Sensitive data exposure
+- Directory traversal
+
+### Phase 3: POST-EXPLOITATION (rounds 26-28)
+- Extract data from confirmed vulnerabilities
+- Chain vulnerabilities for maximum impact
+- Test privilege escalation paths
+- Verify data exposure scope
+
+### Phase 4: REPORTING (round 29-30)
+- Compile all findings with evidence
+- Set done=true
+
+{methodology_section}
+
+## CRITICAL RULES
+
+1. **REAL EVIDENCE ONLY**: Never claim a vulnerability without evidence from an actual response.
+   - SQLi: Show the SQL error message or extracted data from the response body
+   - XSS: Show the reflected payload in the response body unescaped
+   - LFI: Show file contents (e.g., /etc/passwd content) in the response
+   - Command Injection: Show command output in the response
+
+2. **NO HALLUCINATION**: If a test fails (payload is filtered, no error), say so honestly.
+   Do NOT fabricate evidence. The system will verify your claims.
+
+3. **ADAPT**: If WAF blocks payloads, try encoding, case variation, alternative syntax.
+   If an endpoint 404s, move to the next one. Don't repeat failed tests.
+
+4. **BE SPECIFIC**: Include exact URLs, parameters, payloads, and expected vs actual behavior.
+
+5. **PROGRESS**: Don't repeat the same tests. Track what you've already tested.
+
+## OUTPUT FORMAT (strict JSON)
+
+```json
+{{
+    "phase": "recon|testing|post_exploitation|reporting",
+    "reasoning": "Detailed explanation of what you observed and why you're taking these actions",
+    "actions": [
+        {{
+            "method": "GET|POST|PUT|DELETE|OPTIONS|HEAD|PATCH",
+            "url": "https://target.com/path?param=value",
+            "headers": {{"Header-Name": "value"}},
+            "body": "form or raw body data (for POST/PUT)",
+            "content_type": "application/x-www-form-urlencoded|application/json|multipart/form-data",
+            "purpose": "What this request tests"
+        }}
+    ],
+    "findings": [
+        {{
+            "title": "SQL Injection in /login username parameter",
+            "severity": "critical|high|medium|low|info",
+            "vulnerability_type": "sql_injection|xss_reflected|xss_stored|lfi|rfi|command_injection|ssrf|csrf|idor|xxe|auth_bypass|open_redirect|directory_listing|info_disclosure|security_misconfiguration",
+            "affected_endpoint": "/login",
+            "parameter": "username",
+            "payload": "' OR 1=1--",
+            "evidence": "Response contained: You have an error in your SQL syntax...",
+            "description": "The username parameter is vulnerable to SQL injection...",
+            "impact": "An attacker could bypass authentication and extract all database contents",
+            "cvss_score": 9.8,
+            "cwe_id": "CWE-89",
+            "poc_code": "curl -X POST 'https://target/login' -d 'username=%27+OR+1%3D1--&password=test'",
+            "remediation": "Use parameterized queries / prepared statements"
+        }}
+    ],
+    "done": false,
+    "summary": "Only set when done=true. Full executive summary of the pentest."
+}}
+```
+
+IMPORTANT: Output ONLY valid JSON. No markdown, no text before or after the JSON object."""
+
+
+def get_full_llm_pentest_round_prompt(
+    target: str,
+    round_num: int,
+    max_rounds: int,
+    previous_results: str,
+    discovered_info: str,
+    findings_so_far: int,
+) -> str:
+    """Build the round prompt for each iteration of the Full LLM Pentest loop."""
+
+    phase_hint = ""
+    if round_num <= 8:
+        phase_hint = "You should be in the RECON phase. Focus on discovering endpoints, technologies, and input vectors."
+    elif round_num <= 25:
+        phase_hint = "You should be in the TESTING phase. Test discovered endpoints for vulnerabilities."
+    elif round_num <= 28:
+        phase_hint = "You should be in the POST-EXPLOITATION phase. Chain vulnerabilities and extract data."
+    else:
+        phase_hint = "You should be in the REPORTING phase. Compile final findings and set done=true."
+
+    return f"""## ROUND {round_num}/{max_rounds}
+
+Target: {target}
+Findings so far: {findings_so_far}
+{phase_hint}
+
+{"WARNING: This is your LAST round. Set done=true and include your final summary." if round_num >= max_rounds else ""}
+
+## WHAT YOU KNOW SO FAR
+
+{discovered_info if discovered_info else "Nothing discovered yet. Start with basic recon."}
+
+## PREVIOUS ROUND RESULTS
+
+{previous_results if previous_results else "This is the first round. No previous results."}
+
+Plan your next actions. Remember:
+- Max 10 HTTP requests per round
+- Be strategic — don't waste requests on unlikely paths
+- Build on what you've learned from previous responses
+- Report findings as soon as you have REAL evidence
+
+Output your response as a single JSON object."""
+
+
+def get_full_llm_pentest_report_prompt(
+    target: str,
+    findings_json: str,
+    total_rounds: int,
+    total_requests: int,
+) -> str:
+    """Prompt for the LLM to generate the final pentest report."""
+    return f"""Generate a professional penetration test report for the following engagement.
+
+## Engagement Details
+- Target: {target}
+- Testing Rounds: {total_rounds}
+- Total HTTP Requests: {total_requests}
+- Methodology: AI-Driven Full Pentest (LLM as Testing Engine)
+
+## Confirmed Findings
+
+{findings_json}
+
+## Report Structure
+
+Generate a comprehensive report with:
+
+1. **Executive Summary** — Business impact (non-technical language), overall risk rating, key findings
+2. **Scope and Methodology** — What was tested, approach taken, standards followed (OWASP, PTES)
+3. **Detailed Findings** — For each vulnerability: title, severity, description, evidence, impact, remediation, OWASP/CWE references
+4. **Risk Prioritization Table** — All findings sorted by severity with CVSS scores
+5. **Remediation Roadmap** — Short-term fixes, medium-term improvements, long-term recommendations
+6. **Conclusion**
+
+Write in professional English suitable for C-level stakeholders and technical teams.
+Be precise, structured, and security-focused.
+
+Output the report as a markdown document."""

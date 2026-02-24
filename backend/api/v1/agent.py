@@ -105,6 +105,7 @@ class AgentMode(str, Enum):
     ANALYZE_ONLY = "analyze_only"  # Analysis without testing
     AUTO_PENTEST = "auto_pentest"  # One-click full auto pentest
     CLI_AGENT = "cli_agent"        # AI CLI tool inside Kali sandbox
+    FULL_LLM_PENTEST = "full_llm_pentest"  # LLM drives the entire pentest cycle
 
 
 class AgentRequest(BaseModel):
@@ -251,6 +252,7 @@ async def run_agent(request: AgentRequest, background_tasks: BackgroundTasks):
         "analyze_only": "Analysis only, no active testing",
         "auto_pentest": "One-click auto pentest: Full recon + 100 vuln types + AI report",
         "cli_agent": "CLI Agent: AI CLI tool (Claude/Gemini/Codex) inside Kali sandbox",
+        "full_llm_pentest": "Full LLM Pentest: AI drives the entire pentest cycle autonomously",
     }
 
     return AgentResponse(
@@ -379,6 +381,7 @@ async def _run_agent_task(
                 AgentMode.ANALYZE_ONLY: OperationMode.ANALYZE_ONLY,
                 AgentMode.AUTO_PENTEST: OperationMode.AUTO_PENTEST,
                 AgentMode.CLI_AGENT: OperationMode.CLI_AGENT,
+                AgentMode.FULL_LLM_PENTEST: OperationMode.FULL_LLM_PENTEST,
             }
             op_mode = mode_map.get(mode, OperationMode.FULL_AUTO)
 

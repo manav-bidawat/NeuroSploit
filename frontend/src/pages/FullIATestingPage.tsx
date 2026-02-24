@@ -4,7 +4,7 @@ import {
   Crosshair, Shield, ChevronDown, ChevronUp, Loader2,
   AlertTriangle, CheckCircle2, Globe, Lock, Bug,
   FileText, ScrollText, X, ExternalLink, Download, Sparkles,
-  Brain, Wrench, Layers, Trash2, Clock, Search,
+  Brain, Trash2, Clock, Search,
   Activity, Terminal
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
@@ -14,22 +14,12 @@ import type { AgentStatus, AgentFinding, AgentLog, ToolExecution, ContainerStatu
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PHASES = [
-  { key: 'parallel', label: 'Parallel Streams', icon: Layers, range: [0, 50] as const },
-  { key: 'deep', label: 'Deep Analysis', icon: Brain, range: [50, 75] as const },
-  { key: 'final', label: 'Finalization', icon: Shield, range: [75, 100] as const },
+  { key: 'recon', label: 'AI Recon', icon: Globe, range: [0, 25] as const },
+  { key: 'testing', label: 'AI Testing', icon: Bug, range: [25, 70] as const },
+  { key: 'postexploit', label: 'Post-Exploitation', icon: Brain, range: [70, 85] as const },
+  { key: 'report', label: 'Report', icon: Shield, range: [85, 100] as const },
 ]
 
-const STREAMS = [
-  { key: 'recon', label: 'Recon', icon: Globe, color: 'blue', activeUntil: 25 },
-  { key: 'junior', label: 'Junior AI', icon: Brain, color: 'purple', activeUntil: 35 },
-  { key: 'tools', label: 'Tools', icon: Wrench, color: 'orange', activeUntil: 50 },
-] as const
-
-const STREAM_COLORS: Record<string, { bg: string; text: string; border: string; pulse: string }> = {
-  blue:   { bg: 'bg-blue-500/20',   text: 'text-blue-400',   border: 'border-blue-500/40',   pulse: 'bg-blue-400' },
-  purple: { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/40', pulse: 'bg-purple-400' },
-  orange: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/40', pulse: 'bg-orange-400' },
-}
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500',
@@ -53,11 +43,8 @@ const CONFIDENCE_STYLES: Record<string, string> = {
 
 const LOG_FILTERS = [
   { key: 'all', label: 'All', color: '' },
-  { key: 'stream1', label: 'Recon', color: 'text-blue-400' },
-  { key: 'stream2', label: 'Junior', color: 'text-purple-400' },
-  { key: 'stream3', label: 'Tools', color: 'text-orange-400' },
-  { key: 'deep', label: 'Deep', color: 'text-cyan-400' },
-  { key: 'container', label: 'Container', color: 'text-cyan-300' },
+  { key: 'llm', label: 'LLM Pentest', color: 'text-red-400' },
+  { key: 'ai', label: 'AI Decisions', color: 'text-purple-400' },
   { key: 'error', label: 'Errors', color: 'text-red-400' },
 ]
 
@@ -70,9 +57,10 @@ const MAX_TOASTS = 5
 // ─── Utility Functions ────────────────────────────────────────────────────────
 
 function phaseFromProgress(progress: number): number {
-  if (progress < 50) return 0
-  if (progress < 75) return 1
-  return 2
+  if (progress < 25) return 0
+  if (progress < 70) return 1
+  if (progress < 85) return 2
+  return 3
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -83,6 +71,7 @@ function formatElapsed(totalSeconds: number): string {
 }
 
 function logMessageColor(message: string): string {
+  if (message.startsWith('[LLM PENTEST]')) return 'text-red-400'
   if (message.startsWith('[STREAM 1]')) return 'text-blue-400'
   if (message.startsWith('[STREAM 2]')) return 'text-purple-400'
   if (message.startsWith('[STREAM 3]')) return 'text-orange-400'
@@ -101,11 +90,8 @@ function logMessageColor(message: string): string {
 
 function matchLogFilter(log: AgentLog, filter: string): boolean {
   if (filter === 'all') return true
-  if (filter === 'stream1') return log.message.startsWith('[STREAM 1]')
-  if (filter === 'stream2') return log.message.startsWith('[STREAM 2]')
-  if (filter === 'stream3') return log.message.startsWith('[STREAM 3]')
-  if (filter === 'deep') return log.message.startsWith('[DEEP]')
-  if (filter === 'container') return log.message.startsWith('[CONTAINER]')
+  if (filter === 'llm') return log.message.startsWith('[LLM PENTEST]')
+  if (filter === 'ai') return log.source === 'llm' || log.message.includes('[AI]') || log.message.includes('[LLM]')
   if (filter === 'error') return log.level === 'error' || log.level === 'warning'
   return true
 }
@@ -138,33 +124,6 @@ interface Toast {
 }
 
 // ─── Sub-Components ───────────────────────────────────────────────────────────
-
-function StreamBadge({ stream, progress, isRunning }: {
-  stream: typeof STREAMS[number]; progress: number; isRunning: boolean
-}) {
-  const active = isRunning && progress < stream.activeUntil
-  const done = progress >= stream.activeUntil
-  const colors = STREAM_COLORS[stream.color]
-  const Icon = stream.icon
-
-  return (
-    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all duration-300 ${
-      active ? `${colors.bg} ${colors.text} ${colors.border}` :
-      done   ? 'bg-dark-700/50 text-dark-400 border-dark-600' :
-               'bg-dark-900 text-dark-500 border-dark-700'
-    }`}>
-      {active && (
-        <span className="relative flex h-2 w-2">
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${colors.pulse} opacity-75`} />
-          <span className={`relative inline-flex rounded-full h-2 w-2 ${colors.pulse}`} />
-        </span>
-      )}
-      {done && <CheckCircle2 className="w-3 h-3 text-green-500" />}
-      {!active && !done && <Icon className="w-3 h-3" />}
-      <span>{stream.label}</span>
-    </div>
-  )
-}
 
 function LiveStatsDashboard({ status, elapsedSeconds, toolExecutions }: {
   status: AgentStatus; elapsedSeconds: number; toolExecutions: ToolExecution[]
@@ -487,13 +446,20 @@ export default function FullIATestingPage() {
   // ─── Elapsed Time Ticker ──────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!isRunning || !status?.started_at) return
+    if (!status?.started_at) return
     const startTime = new Date(status.started_at).getTime()
-    const tick = () => setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [isRunning, status?.started_at])
+    if (isRunning) {
+      const tick = () => setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000))
+      tick()
+      const id = setInterval(tick, 1000)
+      return () => clearInterval(id)
+    } else {
+      const endTime = status.completed_at
+        ? new Date(status.completed_at).getTime()
+        : Date.now()
+      setElapsedSeconds(Math.max(0, Math.floor((endTime - startTime) / 1000)))
+    }
+  }, [isRunning, status?.started_at, status?.completed_at])
 
   // ─── Polling ──────────────────────────────────────────────────────────────
 
@@ -593,8 +559,9 @@ export default function FullIATestingPage() {
 
     try {
       const resp = await agentApi.autoPentest(primaryTarget, {
+        mode: 'full_llm_pentest',
         prompt: promptContent,
-        enable_kali_sandbox: true,
+        enable_kali_sandbox: false,
         auth_type: authType || undefined,
         auth_value: authValue || undefined,
         preferred_provider: selectedProvider || undefined,
@@ -603,7 +570,7 @@ export default function FullIATestingPage() {
 
       setAgentId(resp.agent_id)
       setIsRunning(true)
-      addToast('FULL AI pentest started', 'info')
+      addToast('Full LLM Pentest started', 'info')
       localStorage.setItem(SESSION_KEY, JSON.stringify({
         agentId: resp.agent_id,
         target: primaryTarget,
@@ -705,9 +672,9 @@ export default function FullIATestingPage() {
         <div className="inline-flex items-center justify-center w-16 h-16 bg-red-500/20 rounded-2xl mb-4">
           <Crosshair className="w-8 h-8 text-red-400" />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-2">FULL AI TESTING</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">FULL LLM PENTEST</h1>
         <p className="text-dark-400 max-w-md mx-auto text-sm">
-          Complete AI-driven penetration test. Recon, exploitation, post-exploitation with Kali sandbox.
+          The LLM drives the entire pentest cycle. AI plans HTTP requests, system executes, AI analyzes and adapts.
         </p>
         {promptContent && (
           <button
@@ -766,13 +733,13 @@ export default function FullIATestingPage() {
 
           <div className="flex flex-wrap gap-2 mb-6">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-lg text-xs text-red-400">
-              <Crosshair className="w-3 h-3" /> Full Pentest Cycle
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 border border-orange-500/20 rounded-lg text-xs text-orange-400">
-              <Wrench className="w-3 h-3" /> Kali Sandbox
+              <Brain className="w-3 h-3" /> LLM-Driven Pentest
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs text-purple-400">
-              <Brain className="w-3 h-3" /> AI Researcher
+              <Crosshair className="w-3 h-3" /> AI Plans &amp; Executes HTTP
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 border border-orange-500/20 rounded-lg text-xs text-orange-400">
+              <Shield className="w-3 h-3" /> Full Validation Pipeline
             </span>
           </div>
 
@@ -865,8 +832,8 @@ export default function FullIATestingPage() {
             disabled={!target.trim() || !promptContent || promptLoading}
             className="w-full py-4 bg-red-500 hover:bg-red-600 disabled:bg-dark-600 disabled:text-dark-400 text-white font-bold text-lg rounded-xl transition-colors flex items-center justify-center gap-3"
           >
-            <Crosshair className="w-6 h-6" />
-            START FULL AI PENTEST
+            <Brain className="w-6 h-6" />
+            START FULL LLM PENTEST
           </button>
         </div>
       )}
@@ -885,9 +852,9 @@ export default function FullIATestingPage() {
                   status?.status === 'error' ? 'bg-red-500' : 'bg-gray-500'
                 }`} />
                 <h3 className="text-white font-semibold truncate">
-                  {isRunning ? 'FULL AI Pentest Running' :
-                   status?.status === 'completed' ? 'Pentest Complete' :
-                   status?.status === 'error' ? 'Pentest Failed' : 'Pentest Stopped'}
+                  {isRunning ? 'Full LLM Pentest Running' :
+                   status?.status === 'completed' ? 'LLM Pentest Complete' :
+                   status?.status === 'error' ? 'LLM Pentest Failed' : 'LLM Pentest Stopped'}
                 </h3>
                 <span className="text-dark-400 text-sm truncate max-w-[200px] sm:max-w-[300px] hidden sm:inline">{target}</span>
               </div>
@@ -946,7 +913,7 @@ export default function FullIATestingPage() {
               </div>
 
               {/* Phase Indicators */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {PHASES.map((phase, idx) => {
                   const Icon = phase.icon
                   const isActive = idx === currentPhaseIdx && isRunning
@@ -971,13 +938,6 @@ export default function FullIATestingPage() {
                           {phase.range[0]}-{phase.range[1]}%
                         </span>
                       </div>
-                      {idx === 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {STREAMS.map(stream => (
-                            <StreamBadge key={stream.key} stream={stream} progress={status.progress} isRunning={isRunning} />
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
@@ -1272,7 +1232,7 @@ export default function FullIATestingPage() {
                   {isRunning ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      FULL AI pentest in progress... Findings will appear as discovered.
+                      Full LLM Pentest in progress... AI is planning and executing tests.
                     </span>
                   ) : (
                     'No findings'
@@ -1304,7 +1264,7 @@ export default function FullIATestingPage() {
                   <AlertTriangle className="w-6 h-6 text-yellow-500" />
                 )}
                 <h3 className={`${status.status === 'completed' ? 'text-green-400' : 'text-yellow-400'} font-semibold text-lg`}>
-                  {status.status === 'completed' ? 'FULL AI Pentest Complete' : 'Pentest Stopped'}
+                  {status.status === 'completed' ? 'Full LLM Pentest Complete' : 'LLM Pentest Stopped'}
                 </h3>
               </div>
 

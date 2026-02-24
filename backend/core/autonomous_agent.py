@@ -255,6 +255,7 @@ class OperationMode(Enum):
     ANALYZE_ONLY = "analyze_only"
     AUTO_PENTEST = "auto_pentest"
     CLI_AGENT = "cli_agent"
+    FULL_LLM_PENTEST = "full_llm_pentest"
 
 
 class FindingSeverity(Enum):
@@ -4005,6 +4006,8 @@ NOT_VULNERABLE: <reason>"""
                 return await self._run_auto_pentest()
             elif self.mode == OperationMode.CLI_AGENT:
                 return await self._run_cli_agent_mode()
+            elif self.mode == OperationMode.FULL_LLM_PENTEST:
+                return await self._run_full_llm_pentest()
             else:
                 return await self._run_full_auto()
         except Exception as e:
@@ -5007,6 +5010,457 @@ NOT_VULNERABLE: <reason>"""
         report = await self._generate_full_report()
         await self._update_progress(100, "CLI Agent pentest complete")
         return report
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # FULL LLM PENTEST MODE — AI drives the entire pentest cycle
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def _run_full_llm_pentest(self) -> Dict[str, Any]:
+        """Full LLM Pentest: the AI drives every step of the pentest.
+
+        The LLM acts as a senior penetration tester. It plans HTTP requests,
+        the system executes them, and the LLM analyzes real responses to
+        identify vulnerabilities. Pure AI-driven, no hardcoded payloads.
+
+        Loop: LLM plans → System executes HTTP → LLM analyzes → repeat
+        """
+        await self._update_progress(0, "Full LLM Pentest starting")
+        await self.log("info", "=" * 60)
+        await self.log("info", "  FULL LLM PENTEST MODE")
+        await self.log("info", "  AI drives the entire pentest cycle")
+        await self.log("info", "=" * 60)
+
+        if not self.llm.is_available():
+            await self.log("error", "LLM not available! This mode requires an active LLM provider.")
+            await self.log("error", "Configure ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider.")
+            return self._generate_error_report("LLM not available for Full LLM Pentest mode")
+
+        # Import prompts
+        from backend.core.vuln_engine.ai_prompts import (
+            get_full_llm_pentest_system_prompt,
+            get_full_llm_pentest_round_prompt,
+            get_full_llm_pentest_report_prompt,
+        )
+
+        # Load methodology prompt
+        methodology = self.custom_prompt or ""
+        if not methodology:
+            try:
+                prompt_path = Path("/opt/Prompts-PenTest/pentestcompleto_en.md")
+                if not prompt_path.exists():
+                    prompt_path = Path("/opt/Prompts-PenTest/pentestcompleto.md")
+                if prompt_path.exists():
+                    methodology = prompt_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+        # Build system prompt
+        system_prompt = get_full_llm_pentest_system_prompt(methodology)
+        await self.log("info", f"  System prompt: {len(system_prompt)} chars")
+        await self.log("info", f"  Methodology: {'loaded' if methodology else 'none'} ({len(methodology)} chars)")
+
+        # State tracking
+        MAX_ROUNDS = 30
+        MAX_ACTIONS_PER_ROUND = 10
+        total_requests = 0
+        discovered_info_parts: List[str] = []
+        all_round_results: List[str] = []  # accumulates round-by-round results
+        llm_findings: List[Dict] = []
+
+        await self._update_progress(2, "Full LLM Pentest: Round 1")
+
+        for round_num in range(1, MAX_ROUNDS + 1):
+            if self.is_cancelled():
+                await self.log("warning", "[LLM PENTEST] Cancelled by user")
+                break
+
+            # Calculate progress: rounds map to 0-85%
+            progress = min(85, int((round_num / MAX_ROUNDS) * 85))
+            phase_label = (
+                "Recon" if round_num <= 8 else
+                "Testing" if round_num <= 25 else
+                "Post-Exploitation" if round_num <= 28 else
+                "Reporting"
+            )
+            await self._update_progress(progress, f"Full LLM Pentest: {phase_label} (Round {round_num}/{MAX_ROUNDS})")
+
+            # Build round prompt with accumulated context
+            # Keep only recent results to manage token budget (last 5 rounds)
+            recent_results = "\n\n".join(all_round_results[-5:]) if all_round_results else ""
+            discovered_summary = "\n".join(discovered_info_parts[-30:]) if discovered_info_parts else ""
+
+            round_prompt = get_full_llm_pentest_round_prompt(
+                target=self.target,
+                round_num=round_num,
+                max_rounds=MAX_ROUNDS,
+                previous_results=recent_results,
+                discovered_info=discovered_summary,
+                findings_so_far=len(self.findings),
+            )
+
+            # Call LLM
+            await self.log("info", f"[LLM PENTEST] Round {round_num}: Asking AI to plan ({phase_label})")
+            try:
+                llm_response = await self.llm.generate(
+                    prompt=round_prompt,
+                    system=system_prompt,
+                    max_tokens=8192,
+                )
+            except Exception as e:
+                await self.log("error", f"[LLM PENTEST] LLM call failed: {e}")
+                # Try to continue with next round
+                all_round_results.append(f"Round {round_num}: LLM call failed — {str(e)[:100]}")
+                continue
+
+            # Parse LLM response as JSON
+            parsed = self._parse_llm_json(llm_response)
+            if not parsed:
+                await self.log("warning", f"[LLM PENTEST] Round {round_num}: Failed to parse LLM JSON response")
+                all_round_results.append(f"Round {round_num}: LLM returned invalid JSON")
+                continue
+
+            reasoning = parsed.get("reasoning", "")
+            actions = parsed.get("actions", [])
+            findings = parsed.get("findings", [])
+            phase = parsed.get("phase", "unknown")
+            done = parsed.get("done", False)
+            summary = parsed.get("summary", "")
+
+            if reasoning:
+                await self.log("info", f"[LLM PENTEST] AI reasoning: {reasoning[:200]}")
+
+            # Execute HTTP actions
+            round_result_parts = [f"=== Round {round_num} ({phase}) ==="]
+            if reasoning:
+                round_result_parts.append(f"Reasoning: {reasoning}")
+
+            actions_to_exec = actions[:MAX_ACTIONS_PER_ROUND]
+            await self.log("info", f"[LLM PENTEST] Executing {len(actions_to_exec)} HTTP requests")
+
+            for i, action in enumerate(actions_to_exec):
+                if self.is_cancelled():
+                    break
+
+                result = await self._execute_llm_action(action, i + 1)
+                total_requests += 1
+
+                if result:
+                    # Add to round results for LLM context
+                    result_summary = self._summarize_response(action, result)
+                    round_result_parts.append(result_summary)
+
+                    # Track discovered info
+                    purpose = action.get("purpose", "")
+                    url = action.get("url", "")
+                    status = result.get("status", 0)
+                    if status == 200:
+                        discovered_info_parts.append(
+                            f"- {action.get('method', 'GET')} {url} → {status} "
+                            f"({len(result.get('body', ''))} bytes) — {purpose}"
+                        )
+                    elif status in (301, 302, 303, 307, 308):
+                        location = result.get("headers", {}).get("Location", result.get("headers", {}).get("location", ""))
+                        discovered_info_parts.append(f"- {url} → redirect to {location}")
+                    elif status == 404:
+                        discovered_info_parts.append(f"- {url} → 404 (not found)")
+                    elif status == 403:
+                        discovered_info_parts.append(f"- {url} → 403 (forbidden)")
+                    else:
+                        discovered_info_parts.append(f"- {url} → {status}")
+                else:
+                    round_result_parts.append(
+                        f"Request {i+1}: {action.get('method', 'GET')} {action.get('url', '?')} → FAILED (connection error/timeout)"
+                    )
+
+            all_round_results.append("\n".join(round_result_parts))
+
+            # Process findings from this round
+            for finding_data in findings:
+                await self._process_llm_pentest_finding(finding_data, round_num)
+
+            # Check if LLM says we're done
+            if done:
+                await self.log("success", f"[LLM PENTEST] AI completed pentest after {round_num} rounds")
+                if summary:
+                    await self.log("info", f"[LLM PENTEST] Summary: {summary[:300]}")
+                break
+
+            await self.log("info", f"[LLM PENTEST] Round {round_num} complete: "
+                           f"{len(actions_to_exec)} requests, {len(findings)} findings, "
+                           f"total: {total_requests} requests, {len(self.findings)} confirmed findings")
+
+        # ── FINALIZATION ──
+        await self._update_progress(88, "Full LLM Pentest: Generating report")
+        await self.log("info", f"[LLM PENTEST] Testing complete: {total_requests} total requests, "
+                       f"{len(self.findings)} confirmed findings")
+
+        # Generate AI-enhanced report
+        report = await self._generate_full_report()
+
+        # Also try to get an AI narrative report
+        if self.llm.is_available() and self.findings:
+            try:
+                findings_json = json.dumps([
+                    {
+                        "title": f.title,
+                        "severity": f.severity,
+                        "vulnerability_type": f.vulnerability_type,
+                        "affected_endpoint": f.affected_endpoint,
+                        "parameter": f.parameter,
+                        "payload": f.payload,
+                        "evidence": f.evidence[:500] if f.evidence else "",
+                        "description": f.description,
+                        "impact": f.impact,
+                        "cvss_score": f.cvss_score,
+                        "cwe_id": f.cwe_id,
+                        "poc_code": f.poc_code,
+                        "remediation": f.remediation,
+                        "confidence_score": f.confidence_score,
+                    }
+                    for f in self.findings
+                ], indent=2)
+
+                report_prompt = get_full_llm_pentest_report_prompt(
+                    target=self.target,
+                    findings_json=findings_json,
+                    total_rounds=min(round_num, MAX_ROUNDS),
+                    total_requests=total_requests,
+                )
+                ai_report_text = await self.llm.generate(
+                    prompt=report_prompt,
+                    system="You are a professional penetration testing report writer.",
+                    max_tokens=16384,
+                )
+                if ai_report_text:
+                    report["ai_narrative_report"] = ai_report_text
+                    await self.log("success", "[LLM PENTEST] AI narrative report generated")
+            except Exception as e:
+                await self.log("debug", f"[LLM PENTEST] Report generation error: {e}")
+
+        await self._update_progress(100, "Full LLM Pentest complete")
+        await self.log("info", "=" * 60)
+        await self.log("info", f"  FULL LLM PENTEST COMPLETE: {len(self.findings)} findings")
+        await self.log("info", f"  Total HTTP requests: {total_requests}")
+        await self.log("info", "=" * 60)
+        return report
+
+    async def _execute_llm_action(self, action: Dict, action_num: int) -> Optional[Dict]:
+        """Execute a single HTTP action planned by the LLM.
+
+        The action dict has: method, url, headers, body, content_type, purpose
+        Returns the response dict or None on failure.
+        """
+        method = (action.get("method") or "GET").upper()
+        url = action.get("url", "")
+        custom_headers = action.get("headers") or {}
+        body = action.get("body")
+        content_type = action.get("content_type", "")
+        purpose = action.get("purpose", "")
+
+        if not url:
+            return None
+
+        # Ensure URL is absolute
+        if not url.startswith("http"):
+            url = urljoin(self.target, url)
+
+        # Build request headers
+        headers = dict(self.auth_headers) if self.auth_headers else {}
+        headers.update(custom_headers)
+        if content_type and "Content-Type" not in headers and "content-type" not in headers:
+            headers["Content-Type"] = content_type
+
+        # Log the request
+        await self.log("info", f"[LLM PENTEST] → {method} {url[:120]} ({purpose[:60]})")
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=15)
+
+            if self.request_engine:
+                # Use request engine for retry/rate limiting
+                data = None
+                params = None
+                if method == "GET":
+                    # Parse params from URL
+                    pass  # URL already has params
+                else:
+                    if body:
+                        if content_type and "json" in content_type:
+                            try:
+                                data = json.loads(body) if isinstance(body, str) else body
+                            except (json.JSONDecodeError, TypeError):
+                                data = body
+                        else:
+                            data = body
+                    else:
+                        data = None
+
+                result = await self.request_engine.request(
+                    url, method=method,
+                    headers=headers if headers else None,
+                    data=data,
+                    allow_redirects=True,
+                )
+                if result:
+                    resp_dict = {
+                        "status": result.status,
+                        "body": result.body[:50000] if result.body else "",
+                        "headers": result.headers,
+                        "url": result.url,
+                    }
+                    status_str = f"{result.status}"
+                    body_len = len(result.body) if result.body else 0
+                    await self.log("info", f"[LLM PENTEST] ← {status_str} ({body_len} bytes)")
+                    return resp_dict
+            else:
+                # Direct session fallback
+                req_kwargs: Dict[str, Any] = {
+                    "allow_redirects": True,
+                    "timeout": timeout,
+                    "headers": headers,
+                }
+                if method != "GET" and body:
+                    if content_type and "json" in content_type:
+                        try:
+                            req_kwargs["json"] = json.loads(body) if isinstance(body, str) else body
+                        except (json.JSONDecodeError, TypeError):
+                            req_kwargs["data"] = body
+                    else:
+                        req_kwargs["data"] = body
+
+                async with self.session.request(method, url, **req_kwargs) as resp:
+                    resp_body = await resp.text()
+                    resp_dict = {
+                        "status": resp.status,
+                        "body": resp_body[:50000],
+                        "headers": dict(resp.headers),
+                        "url": str(resp.url),
+                    }
+                    await self.log("info", f"[LLM PENTEST] ← {resp.status} ({len(resp_body)} bytes)")
+                    return resp_dict
+
+        except asyncio.TimeoutError:
+            await self.log("debug", f"[LLM PENTEST] Timeout: {url[:80]}")
+        except Exception as e:
+            await self.log("debug", f"[LLM PENTEST] Request error: {str(e)[:80]}")
+        return None
+
+    def _summarize_response(self, action: Dict, result: Dict) -> str:
+        """Create a compact summary of an HTTP response for the LLM context."""
+        method = action.get("method", "GET")
+        url = action.get("url", "?")
+        purpose = action.get("purpose", "")
+        status = result.get("status", 0)
+        headers = result.get("headers", {})
+        body = result.get("body", "")
+
+        # Extract key headers
+        key_headers = {}
+        for h in ["Server", "server", "Content-Type", "content-type",
+                   "X-Powered-By", "x-powered-by", "Set-Cookie", "set-cookie",
+                   "Location", "location", "X-Frame-Options", "x-frame-options",
+                   "Content-Security-Policy", "content-security-policy",
+                   "WWW-Authenticate", "www-authenticate"]:
+            val = headers.get(h)
+            if val:
+                key_headers[h] = val[:200]
+
+        # Truncate body for context (keep meaningful content)
+        body_preview = body[:3000] if body else ""
+
+        lines = [
+            f"Request: {method} {url}",
+            f"Purpose: {purpose}",
+            f"Status: {status}",
+            f"Headers: {json.dumps(key_headers, default=str)}",
+            f"Body ({len(body)} bytes):",
+            body_preview,
+        ]
+        return "\n".join(lines)
+
+    def _parse_llm_json(self, text: str) -> Optional[Dict]:
+        """Parse JSON from LLM response, handling markdown code blocks."""
+        if not text:
+            return None
+
+        # Try direct parse
+        text_stripped = text.strip()
+        try:
+            return json.loads(text_stripped)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Try extracting from markdown code block
+        import re
+        patterns = [
+            r'```json\s*\n(.*?)\n\s*```',
+            r'```\s*\n(.*?)\n\s*```',
+            r'\{[\s\S]*\}',
+        ]
+        for pattern in patterns[:2]:
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+        # Try finding the outermost JSON object
+        # Find first { and last }
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace >= 0 and last_brace > first_brace:
+            try:
+                return json.loads(text[first_brace:last_brace + 1])
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return None
+
+    async def _process_llm_pentest_finding(self, finding_data: Dict, round_num: int):
+        """Process a finding reported by the LLM in Full LLM Pentest mode.
+
+        Creates a Finding object and routes it through the validation pipeline.
+        """
+        title = finding_data.get("title", "LLM Finding")
+        severity = finding_data.get("severity", "medium").lower()
+        if severity not in ("critical", "high", "medium", "low", "info"):
+            severity = "medium"
+
+        vuln_type = finding_data.get("vulnerability_type", "unknown")
+        evidence = finding_data.get("evidence", "")
+
+        # Skip findings without evidence (anti-hallucination)
+        if not evidence or len(evidence) < 10:
+            await self.log("debug", f"[LLM PENTEST] Skipping finding without evidence: {title}")
+            return
+
+        finding = Finding(
+            id=hashlib.md5(
+                f"{title}|{finding_data.get('affected_endpoint', '')}|{finding_data.get('payload', '')}|{round_num}".encode()
+            ).hexdigest()[:12],
+            title=title,
+            severity=severity,
+            vulnerability_type=vuln_type,
+            cvss_score=finding_data.get("cvss_score", 0.0),
+            cwe_id=finding_data.get("cwe_id", ""),
+            description=finding_data.get("description", ""),
+            affected_endpoint=finding_data.get("affected_endpoint", self.target),
+            parameter=finding_data.get("parameter", ""),
+            payload=finding_data.get("payload", ""),
+            evidence=evidence,
+            impact=finding_data.get("impact", ""),
+            poc_code=finding_data.get("poc_code", ""),
+            remediation=finding_data.get("remediation", ""),
+            ai_verified=True,
+            confidence_score=70,  # Initial score, ValidationJudge will refine
+            ai_status="confirmed",
+        )
+
+        # Route through validation pipeline (_judge_finding handles
+        # negative controls, proof of execution, confidence scoring)
+        await self._add_finding(finding)
+        await self.log("success", f"[LLM PENTEST] Finding: {severity.upper()} — {title}")
 
     # ── Pre-Stream AI Master Plan ──
 
